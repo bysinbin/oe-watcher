@@ -23,6 +23,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const alertMatchCategory = document.getElementById('alertMatchCategory');
   const btnAlertSkip = document.getElementById('btnAlertSkip');
   const btnAlertKeep = document.getElementById('btnAlertKeep');
+  const btnAlertAddAlias = document.getElementById('btnAlertAddAlias');
+  const btnAlertAddExclude = document.getElementById('btnAlertAddExclude');
+
+  // Modal Elements
+  const aliasModal = document.getElementById('aliasModal');
+  const modalTargetName = document.getElementById('modalTargetName');
+  const modalAliasInput = document.getElementById('modalAliasInput');
+  const btnModalClose = document.getElementById('btnModalClose');
+  const btnModalCancel = document.getElementById('btnModalCancel');
+  const btnModalSave = document.getElementById('btnModalSave');
+
+  let currentModalTarget = '';
+  let lastActiveMatch = null;
 
   // Person List & Search Elements
   const searchInput = document.getElementById('searchInput');
@@ -123,6 +136,70 @@ document.addEventListener('DOMContentLoaded', () => {
         btnSync.disabled = false;
       }
     });
+
+    // Alert Quick Actions
+    if (btnAlertAddAlias) {
+      btnAlertAddAlias.addEventListener('click', () => {
+        if (lastActiveMatch && lastActiveMatch.person) {
+          openAliasModal(lastActiveMatch.person.display_name);
+        }
+      });
+    }
+
+    if (btnAlertAddExclude) {
+      btnAlertAddExclude.addEventListener('click', () => {
+        if (lastActiveMatch && lastActiveMatch.person) {
+          quickAddExclude(lastActiveMatch.person.display_name);
+        }
+      });
+    }
+
+    // Modal Events
+    if (btnModalClose) btnModalClose.addEventListener('click', closeAliasModal);
+    if (btnModalCancel) btnModalCancel.addEventListener('click', closeAliasModal);
+    if (btnModalSave) btnModalSave.addEventListener('click', saveModalAlias);
+
+    if (aliasModal) {
+      aliasModal.addEventListener('click', (e) => {
+        if (e.target === aliasModal) closeAliasModal();
+      });
+    }
+
+    if (modalAliasInput) {
+      modalAliasInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveModalAlias();
+        } else if (e.key === 'Escape') {
+          closeAliasModal();
+        }
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && aliasModal && aliasModal.style.display !== 'none') {
+        closeAliasModal();
+      }
+    });
+
+    // Delegated clicks for Person List (+ Alias and 🛡️ Muaf)
+    if (personsList) {
+      personsList.addEventListener('click', (e) => {
+        const aliasBtn = e.target.closest('.btn-add-alias');
+        if (aliasBtn) {
+          const name = aliasBtn.getAttribute('data-name');
+          openAliasModal(name);
+          return;
+        }
+
+        const excludeBtn = e.target.closest('.btn-add-exclude');
+        if (excludeBtn) {
+          const name = excludeBtn.getAttribute('data-name');
+          quickAddExclude(name);
+          return;
+        }
+      });
+    }
   }
 
   async function updateSettingsFilters() {
@@ -195,6 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Match Alert Box
       const match = state.current_match;
       if (match && match.matched) {
+        lastActiveMatch = match;
         matchAlertBox.style.display = 'block';
         alertMatchName.textContent = match.person.display_name;
         alertMatchTags.textContent = (match.person.tags || []).join(', ') || '-';
@@ -226,6 +304,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       personCountBadge.textContent = `${persons.length} KİŞİ`;
 
+      // Update autocomplete datalist if available
+      const datalist = document.getElementById('allPersonsDatalist');
+      if (datalist && (!currentSearchQuery && (!selectedCategory || selectedCategory === 'HEPSİ') && (!selectedTopic || selectedTopic === 'TÜM KONULAR'))) {
+        datalist.innerHTML = persons.map(p => `<option value="${escapeHTML(p.display_name)}"></option>`).join('');
+      }
+
       if (persons.length === 0) {
         personsList.innerHTML = '<div class="empty-state">Eşleşen kişi bulunamadı.</div>';
         return;
@@ -237,8 +321,18 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="person-name">${escapeHTML(p.display_name)}</span>
             <span class="person-topics">${escapeHTML((p.topics || []).join(' • ') || 'Konu belirtilmemiş')}</span>
           </div>
-          <div class="person-tags">
-            ${(p.tags || []).map(t => `<span class="tag-pill">${escapeHTML(t)}</span>`).join('')}
+          <div class="person-side">
+            <div class="person-tags">
+              ${(p.tags || []).map(t => `<span class="tag-pill">${escapeHTML(t)}</span>`).join('')}
+            </div>
+            <div class="person-actions">
+              <button class="btn-item-action btn-add-alias" data-name="${escapeHTML(p.display_name)}" title="Bu kişiye alias (mahlas) tanımla">
+                + Alias
+              </button>
+              <button class="btn-item-action btn-add-exclude" data-name="${escapeHTML(p.display_name)}" title="Bu kişiyi beyaz listeye ekle (muaf tut)">
+                🛡️ Muaf
+              </button>
+            </div>
           </div>
         </div>
       `).join('');
@@ -455,6 +549,97 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Modal Functions
+  function openAliasModal(targetName) {
+    if (!targetName) return;
+    currentModalTarget = targetName;
+    if (modalTargetName) modalTargetName.textContent = targetName;
+    if (modalAliasInput) modalAliasInput.value = '';
+    if (aliasModal) {
+      aliasModal.style.display = 'flex';
+      setTimeout(() => {
+        if (modalAliasInput) modalAliasInput.focus();
+      }, 50);
+    }
+  }
+
+  function closeAliasModal() {
+    if (aliasModal) aliasModal.style.display = 'none';
+    currentModalTarget = '';
+    if (modalAliasInput) modalAliasInput.value = '';
+  }
+
+  async function saveModalAlias() {
+    if (!modalAliasInput) return;
+    const alias = modalAliasInput.value.trim();
+    if (!alias) {
+      showToast('Lütfen geçerli bir takma ad / mahlas girin.', true);
+      modalAliasInput.focus();
+      return;
+    }
+    if (!currentModalTarget) return;
+
+    try {
+      const res = await fetch('/api/rules/alias', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias, target: currentModalTarget })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        closeAliasModal();
+        showToast(`✅ "${alias}" ➔ "${currentModalTarget}" aliası kaydedildi!`);
+        loadRules();
+        loadPersons();
+      } else {
+        showToast('Hata: ' + (data.error || 'Kaydedilemedi'), true);
+      }
+    } catch (err) {
+      showToast('Bağlantı hatası: ' + err.message, true);
+    }
+  }
+
+  async function quickAddExclude(name) {
+    if (!name) return;
+    if (!confirm(`"${name}" beyaz listeye (exclude list) eklensin mi?\n\nBu sanatçı çalsa bile uyarı verilmeyecek ve atlanmayacaktır.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/rules/exclude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`🛡️ "${name}" beyaz listeye eklendi.`);
+        loadRules();
+      } else {
+        showToast('Hata: ' + (data.error || 'Eklenemedi'), true);
+      }
+    } catch (err) {
+      showToast('Bağlantı hatası: ' + err.message, true);
+    }
+  }
+
+  // Toast Function
+  function showToast(message, isError = false) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = 'toast' + (isError ? ' toast-error' : '');
+    toast.textContent = message;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.style.animation = 'toastOut 0.25s ease-out forwards';
+      setTimeout(() => toast.remove(), 250);
+    }, 3200);
+  }
+
   // Global window functions for inline delete onclick
   window.deleteCustomPerson = async (id) => {
     if (!confirm('Bu kişiyi özel listeden silmek istiyor musunuz?')) return;
@@ -464,6 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       });
+      showToast('🗑️ Özel kişi silindi.');
       loadRules();
       loadPersons();
     } catch (err) {
@@ -478,6 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alias })
       });
+      showToast(`🗑️ "${alias}" aliası silindi.`);
       loadRules();
     } catch (err) {
       console.error(err);
@@ -491,6 +678,7 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
       });
+      showToast(`🗑️ "${name}" beyaz listeden çıkarıldı.`);
       loadRules();
     } catch (err) {
       console.error(err);

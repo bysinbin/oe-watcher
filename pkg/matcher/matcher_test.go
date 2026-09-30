@@ -168,6 +168,26 @@ func TestMatcherCustomPersonAndAlias(t *testing.T) {
 	if res2.Person.DisplayName != "Cem Adrian" {
 		t.Errorf("Expected Cem Adrian, got %s", res2.Person.DisplayName)
 	}
+
+	// 3. Test alias targeting parsed primary name: "Rapstar" -> "Ceza" (target is "Ceza (Bilgin Özçalkan)")
+	err = rm.SetAlias("Rapstar", "Ceza")
+	if err != nil {
+		t.Fatalf("Failed to add alias Rapstar -> Ceza: %v", err)
+	}
+	m.RebuildIndex()
+
+	trackRapstar := models.MediaInfo{
+		App:    "Spotify",
+		Artist: "Rapstar",
+		Title:  "Neyim Var Ki",
+	}
+	res3 := m.Match(trackRapstar)
+	if res3 == nil {
+		t.Fatalf("Expected match for alias Rapstar -> Ceza, got nil")
+	}
+	if res3.Person.DisplayName != "Ceza (Bilgin Özçalkan)" {
+		t.Errorf("Expected Ceza (Bilgin Özçalkan), got %s", res3.Person.DisplayName)
+	}
 }
 
 func TestMatcherExcludeList(t *testing.T) {

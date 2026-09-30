@@ -101,6 +101,8 @@
               Şarkıyı Hemen Geç
             </button>
             <button id="btnAlertKeep" class="btn btn-secondary">Dinlemeye Devam Et</button>
+            <button id="btnAlertAddAlias" class="btn btn-secondary" title="Bu sanatçıya alias/mahlas ekle">+ Mahlas Ekle</button>
+            <button id="btnAlertAddExclude" class="btn btn-secondary" title="Bu sanatçıyı muaf tut (beyaz listeye ekle)">🛡️ Muaf Tut</button>
           </div>
         </div>
 
@@ -162,11 +164,12 @@
 
           <!-- Tab 2: Custom Alias -->
           <div class="rule-tab-pane" id="tabAlias" style="display: none;">
-            <p class="rule-desc">Medyada geçen takma adları veritabanındaki hedef kişiye eşleştirin.</p>
+            <p class="rule-desc">Medyada geçen takma adları veritabanındaki hedef kişiye eşleştirin. (Aşağıdaki listeden hedef kişiyi seçebilir veya listedeki kişilerin yanındaki <strong>+ Alias</strong> butonunu kullanabilirsiniz.)</p>
             <form id="formAddAlias" class="rules-form">
               <div class="form-row">
                 <input type="text" id="aliasName" placeholder="Takma Ad / Kısaltma (örn: Süperstar)" required>
-                <input type="text" id="aliasTarget" placeholder="Hedef Kişi (örn: Ajda Pekkan)" required>
+                <input type="text" id="aliasTarget" list="allPersonsDatalist" placeholder="Hedef Kişi (Listeden arayın/seçin)" required autocomplete="off">
+                <datalist id="allPersonsDatalist"></datalist>
               </div>
               <button type="submit" class="btn btn-secondary">+ Alias Kaydet</button>
             </form>
@@ -272,6 +275,37 @@
       </aside>
     </main>
   </div>
+
+  <!-- Modal: Quick Add Alias from Person List -->
+  <div class="modal-backdrop" id="aliasModal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="slash">//</span>
+          <h3>ALİAS (MAHLAS) EKLE</h3>
+        </div>
+        <button class="modal-close-btn" id="btnModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-info-row">
+          <span class="modal-label">HEDEF KİŞİ:</span>
+          <span class="modal-target-name" id="modalTargetName">-</span>
+        </div>
+        <div class="modal-input-group">
+          <label for="modalAliasInput">Bu kişi için geçerli olacak takma ad / mahlas:</label>
+          <input type="text" id="modalAliasInput" placeholder="Örn: Süperstar, Blok, vb." autocomplete="off">
+        </div>
+        <p class="modal-hint">💡 Çalan medyada veya şarkı başlığında bu takma ad geçtiğinde otomatik olarak seçilen kişiyle eşleşecektir.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnModalCancel">İptal</button>
+        <button class="btn btn-danger" id="btnModalSave">+ Alias Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
 
   <script src="app.js"></script>
 </body>

@@ -82,7 +82,16 @@ func (m *Matcher) RebuildIndex() {
 		// Add custom aliases mapped to this person
 		if customAliases != nil {
 			for alias, target := range customAliases {
-				if strings.EqualFold(target, p.DisplayName) {
+				targetMatch := strings.EqualFold(target, p.DisplayName)
+				if !targetMatch {
+					for _, pn := range names {
+						if strings.EqualFold(target, pn) {
+							targetMatch = true
+							break
+						}
+					}
+				}
+				if targetMatch {
 					names = append(names, alias)
 				}
 			}
