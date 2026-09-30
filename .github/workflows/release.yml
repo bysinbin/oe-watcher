@@ -28,7 +28,7 @@ jobs:
 
       - name: Build All Platforms & Browser Extensions
         run: |
-          chmod +x ./build_all.sh ./build_app.sh ./build_extensions.sh
+          chmod +x ./build_all.sh ./build_app.sh ./build_dmg.sh ./build_extensions.sh
           ./build_all.sh
 
       - name: Archive macOS .app
@@ -45,6 +45,7 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
+            dist/OE-Watcher-macOS.dmg
             dist/OE-Watcher-macOS.zip
             dist/oe-watcher-linux-amd64
             dist/oe-watcher-linux-arm64

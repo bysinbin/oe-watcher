@@ -166,7 +166,8 @@ Tarayıcı eklentisi ([extension/](file:///Users/feritetem/Desktop/medya-filter/
 ./build_all.sh
 ```
 > Çıktılar doğrudan `dist/` klasörüne toplanır:
-> - `dist/OE Watcher.app` (macOS arm64 Uygulama Paketi)
+> - `dist/OE-Watcher-macOS.dmg` (macOS Sürükle-Bırak Yükleyici İmajı - **Önerilen**)
+> - `dist/OE Watcher.app` (macOS Uygulama Paketi)
 > - `dist/oe-watcher-windows-amd64.exe` (Windows 64-bit)
 > - `dist/oe-watcher-windows-arm64.exe` (Windows ARM64)
 > - `dist/oe-watcher-linux-amd64` (Linux 64-bit)
@@ -178,11 +179,15 @@ Tarayıcı eklentisi ([extension/](file:///Users/feritetem/Desktop/medya-filter/
 
 ### 2. Platforma Özel Derleme
 
-#### macOS:
+#### macOS (.dmg Yükleyici ve .app):
 ```bash
+# DMG yükleyici paketi üretmek için:
+./build_dmg.sh
+
+# Yalnızca .app paketi derlemek için:
 ./build_app.sh
 ```
-> `dist/OE Watcher.app` oluşturulur ve kod imzası uygulanır. `/Applications` klasörüne taşıyıp çift tıklayarak çalıştırabilirsiniz.
+> `dist/OE-Watcher-macOS.dmg` dosyasına çift tıklayarak `OE Watcher` simgesini `Applications` klasörüne sürükleyip bırakmanız yeterlidir. Uygulama kod imzası ile hazırlandığı için macOS güvenlik onaylarını sorunsuz geçer.
 
 #### Windows:
 ```cmd

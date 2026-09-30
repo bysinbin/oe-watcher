@@ -7,11 +7,14 @@ set -e
 
 echo "🚀 OE Watcher Çoklu Platform Derleme Başlatılıyor..."
 
-# 1. Build macOS Native .app bundle
+# 1. Build macOS Native .app bundle & .dmg installer
 if [ "$(uname)" = "Darwin" ]; then
     echo ""
     echo "🍏 [1/3] macOS .app paketi hazırlanıyor..."
     ./build_app.sh
+    echo ""
+    echo "💿 macOS .dmg yükleyici paketi hazırlanıyor..."
+    ./build_dmg.sh
 fi
 
 # 2. Build Linux Binaries (AMD64 & ARM64)
