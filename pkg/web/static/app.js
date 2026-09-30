@@ -117,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let authToken = localStorage.getItem('oe_auth_token') || '';
   let authRequired = false;
   let pollingTimer = null;
+  let eventSource = null;
 
   // Intercept fetch to automatically attach Bearer token and handle 401
   const origFetch = window.fetch;
@@ -151,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function checkAuthAndStart() {
     try {
-      const res = await apiFetch('/api/auth-status');
+      const res = await fetch('/api/auth-status');
       const data = await res.json();
       authRequired = data.required;
 
@@ -256,7 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnLogout) {
       btnLogout.addEventListener('click', async () => {
         try {
-          await apiFetch('/api/logout', { method: 'POST' });
+          await fetch('/api/logout', { method: 'POST' });
         } catch (err) {}
         authToken = '';
         localStorage.removeItem('oe_auth_token');
@@ -668,7 +669,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  let eventSource = null;
   function setupSSE() {
     if (!window.EventSource) return;
     if (eventSource) {
@@ -677,7 +677,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      eventSource = new EventSource('/api/events');
+      const sseUrl = authToken ? `/api/events?token=${encodeURIComponent(authToken)}` : '/api/events';
+      eventSource = new EventSource(sseUrl);
       eventSource.addEventListener('state', (e) => {
         try {
           const state = JSON.parse(e.data);

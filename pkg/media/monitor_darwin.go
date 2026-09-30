@@ -5,14 +5,56 @@ package media
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strings"
+	"sync"
+	"time"
 
 	"medya-filter/pkg/models"
 )
 
+var (
+	ytOEmbedCache sync.Map
+	ytHTTPClient  = &http.Client{Timeout: 2 * time.Second}
+)
+
+type YTOEmbed struct {
+	Title      string `json:"title"`
+	AuthorName string `json:"author_name"`
+}
+
 const queryScript = `
-function extractCredits(rawTitle, tab) {
+function cleanTitleAndArtist(raw) {
+	if (!raw) return { artist: "", title: "", cleanFull: "", skip: true };
+	let t = raw
+		.replace(/\s*[-|•–—]\s*YouTube Music$/i, "")
+		.replace(/\s*[-|•–—]\s*YouTube$/i, "")
+		.replace(/\s*[-|•–—]\s*Spotify$/i, "")
+		.replace(/\s*[-|•–—]\s*SoundCloud$/i, "")
+		.trim();
+
+	let low = t.toLowerCase();
+	if (t === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
+		return { artist: "", title: "", cleanFull: "", skip: true };
+	}
+
+	let artist = "";
+	let title = t;
+	let seps = [" - ", " – ", " — ", " | "];
+	for (let sep of seps) {
+		if (t.includes(sep)) {
+			let parts = t.split(sep);
+			artist = parts[0].trim();
+			title = parts.slice(1).join(sep).trim();
+			break;
+		}
+	}
+
+	return { artist: artist, title: title, cleanFull: t, skip: false };
+}
+
+function extractCredits(rawTitle) {
 	let credits = [];
 	try {
 		let m = rawTitle.match(/[\(\[](?:feat\.?|ft\.?|prod\.?|beat|söz|müzik|düet|with)[\s:]+([^\)\]]+)[\)\]]/gi);
@@ -20,16 +62,6 @@ function extractCredits(rawTitle, tab) {
 			credits.push(m.join(" "));
 		}
 	} catch(e) {}
-
-	try {
-		if (tab && typeof tab.execute === "function") {
-			let domCredits = tab.execute({javascript: "(function(){let el=document.querySelector('#description-inline-expander, #description, meta[name=\\'description\\']');let text=el?(el.innerText||el.content||''):'';if(!text)return '';let matched=[];let lines=text.split('\\n');for(let i=0;i<lines.length;i++){let l=lines[i].trim();if(/(?:söz|müzik|beste|aranje|beat|prod|düet|feat|mix|mastering|lyric|composer)/i.test(l)){matched.push(l);if(matched.length>=8)break;}}return matched.join(' | ');})()"});
-			if (domCredits && typeof domCredits === "string" && domCredits.trim().length > 0) {
-				credits.push(domCredits.trim());
-			}
-		}
-	} catch(e) {}
-
 	return credits.join(" | ");
 }
 
@@ -83,34 +115,18 @@ function run() {
 					let url = tab.url() || "";
 					let rawTitle = tab.title() || "";
 					let isMusicSite = url.includes("music.youtube.com") || url.includes("open.spotify.com") || url.includes("soundcloud.com");
-					let isVideoSite = url.includes("youtube.com/watch");
+					let isVideoSite = url.includes("youtube.com/watch") || url.includes("youtube.com/shorts");
 
 					if (isMusicSite || isVideoSite) {
-						let cleanTitle = rawTitle
-							.replace(/\s*-\s*YouTube Music$/i, "")
-							.replace(/\s*-\s*YouTube$/i, "")
-							.replace(/\s*\|\s*YouTube$/i, "")
-							.replace(/\s*-\s*Spotify$/i, "")
-							.replace(/\s*\|\s*SoundCloud$/i, "")
-							.trim();
+						let res = cleanTitleAndArtist(rawTitle);
+						if (res.skip) continue;
 
-						let low = cleanTitle.toLowerCase();
-						if (cleanTitle === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
-							continue;
-						}
-
-						let artist = "";
-						if (cleanTitle.includes(" - ")) {
-							let parts = cleanTitle.split(" - ");
-							artist = parts[0].trim();
-						}
-
-						let contribs = extractCredits(rawTitle, tab);
+						let contribs = extractCredits(rawTitle);
 
 						list.push({
 							app: isMusicSite ? "Google Chrome (Music)" : "Google Chrome (YouTube)",
-							artist: artist,
-							title: cleanTitle,
+							artist: res.artist,
+							title: res.title || res.cleanFull,
 							album: "",
 							state: "playing",
 							url: url,
@@ -132,34 +148,18 @@ function run() {
 					let url = tab.url() || "";
 					let rawTitle = tab.title() || "";
 					let isMusicSite = url.includes("music.youtube.com") || url.includes("open.spotify.com") || url.includes("soundcloud.com");
-					let isVideoSite = url.includes("youtube.com/watch");
+					let isVideoSite = url.includes("youtube.com/watch") || url.includes("youtube.com/shorts");
 
 					if (isMusicSite || isVideoSite) {
-						let cleanTitle = rawTitle
-							.replace(/\s*-\s*YouTube Music$/i, "")
-							.replace(/\s*-\s*YouTube$/i, "")
-							.replace(/\s*\|\s*YouTube$/i, "")
-							.replace(/\s*-\s*Spotify$/i, "")
-							.replace(/\s*\|\s*SoundCloud$/i, "")
-							.trim();
+						let res = cleanTitleAndArtist(rawTitle);
+						if (res.skip) continue;
 
-						let low = cleanTitle.toLowerCase();
-						if (cleanTitle === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
-							continue;
-						}
-
-						let artist = "";
-						if (cleanTitle.includes(" - ")) {
-							let parts = cleanTitle.split(" - ");
-							artist = parts[0].trim();
-						}
-
-						let contribs = extractCredits(rawTitle, tab);
+						let contribs = extractCredits(rawTitle);
 
 						list.push({
 							app: isMusicSite ? "Brave (Music)" : "Brave (YouTube)",
-							artist: artist,
-							title: cleanTitle,
+							artist: res.artist,
+							title: res.title || res.cleanFull,
 							album: "",
 							state: "playing",
 							url: url,
@@ -181,35 +181,22 @@ function run() {
 					let url = tab.url() || "";
 					let rawTitle = tab.name() || "";
 					let isMusicSite = url.includes("music.youtube.com") || url.includes("open.spotify.com") || url.includes("soundcloud.com");
-					let isVideoSite = url.includes("youtube.com/watch");
+					let isVideoSite = url.includes("youtube.com/watch") || url.includes("youtube.com/shorts");
 
 					if (isMusicSite || isVideoSite) {
-						let cleanTitle = rawTitle
-							.replace(/\s*-\s*YouTube Music$/i, "")
-							.replace(/\s*-\s*YouTube$/i, "")
-							.replace(/\s*\|\s*YouTube$/i, "")
-							.replace(/\s*-\s*Spotify$/i, "")
-							.replace(/\s*\|\s*SoundCloud$/i, "")
-							.trim();
+						let res = cleanTitleAndArtist(rawTitle);
+						if (res.skip) continue;
 
-						let low = cleanTitle.toLowerCase();
-						if (cleanTitle === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
-							continue;
-						}
-
-						let artist = "";
-						if (cleanTitle.includes(" - ")) {
-							let parts = cleanTitle.split(" - ");
-							artist = parts[0].trim();
-						}
+						let contribs = extractCredits(rawTitle);
 
 						list.push({
 							app: isMusicSite ? "Safari (Music)" : "Safari (YouTube)",
-							artist: artist,
-							title: cleanTitle,
+							artist: res.artist,
+							title: res.title || res.cleanFull,
 							album: "",
 							state: "playing",
 							url: url,
+							contributors: contribs,
 							priority: isMusicSite ? 1 : 2
 						});
 					}
@@ -227,34 +214,18 @@ function run() {
 					let url = tab.url() || "";
 					let rawTitle = tab.title() || "";
 					let isMusicSite = url.includes("music.youtube.com") || url.includes("open.spotify.com") || url.includes("soundcloud.com");
-					let isVideoSite = url.includes("youtube.com/watch");
+					let isVideoSite = url.includes("youtube.com/watch") || url.includes("youtube.com/shorts");
 
 					if (isMusicSite || isVideoSite) {
-						let cleanTitle = rawTitle
-							.replace(/\s*-\s*YouTube Music$/i, "")
-							.replace(/\s*-\s*YouTube$/i, "")
-							.replace(/\s*\|\s*YouTube$/i, "")
-							.replace(/\s*-\s*Spotify$/i, "")
-							.replace(/\s*\|\s*SoundCloud$/i, "")
-							.trim();
+						let res = cleanTitleAndArtist(rawTitle);
+						if (res.skip) continue;
 
-						let low = cleanTitle.toLowerCase();
-						if (cleanTitle === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
-							continue;
-						}
-
-						let artist = "";
-						if (cleanTitle.includes(" - ")) {
-							let parts = cleanTitle.split(" - ");
-							artist = parts[0].trim();
-						}
-
-						let contribs = extractCredits(rawTitle, tab);
+						let contribs = extractCredits(rawTitle);
 
 						list.push({
 							app: isMusicSite ? "Arc (Music)" : "Arc",
-							artist: artist,
-							title: cleanTitle,
+							artist: res.artist,
+							title: res.title || res.cleanFull,
 							album: "",
 							state: "playing",
 							url: url,
@@ -274,6 +245,99 @@ function run() {
 }
 `
 
+func extractYouTubeVideoID(rawURL string) string {
+	if strings.Contains(rawURL, "youtu.be/") {
+		parts := strings.Split(rawURL, "youtu.be/")
+		if len(parts) > 1 {
+			id := strings.Split(parts[1], "?")[0]
+			return strings.Split(id, "&")[0]
+		}
+	}
+	if strings.Contains(rawURL, "watch?") {
+		parts := strings.Split(rawURL, "watch?")
+		if len(parts) > 1 {
+			params := strings.Split(parts[1], "&")
+			for _, p := range params {
+				if strings.HasPrefix(p, "v=") {
+					return strings.TrimPrefix(p, "v=")
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func enrichYouTubeTrack(track *models.MediaInfo) {
+	if track.URL == "" || (!strings.Contains(track.URL, "youtube.com") && !strings.Contains(track.URL, "youtu.be")) {
+		return
+	}
+	videoID := extractYouTubeVideoID(track.URL)
+	if videoID == "" {
+		return
+	}
+
+	if val, ok := ytOEmbedCache.Load(videoID); ok {
+		if emb, ok := val.(YTOEmbed); ok {
+			applyOEmbed(track, emb)
+			return
+		}
+	}
+
+	oembedURL := fmt.Sprintf("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=%s&format=json", videoID)
+	req, err := http.NewRequest("GET", oembedURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	resp, err := ytHTTPClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var emb YTOEmbed
+		if err := json.NewDecoder(resp.Body).Decode(&emb); err == nil {
+			ytOEmbedCache.Store(videoID, emb)
+			applyOEmbed(track, emb)
+		}
+	}
+}
+
+func applyOEmbed(track *models.MediaInfo, emb YTOEmbed) {
+	if emb.AuthorName != "" {
+		author := strings.TrimSuffix(emb.AuthorName, " - Topic")
+		author = strings.TrimSuffix(author, "VEVO")
+		author = strings.TrimSpace(author)
+
+		if track.Artist == "" || strings.EqualFold(track.Artist, "YouTube") || strings.EqualFold(track.Artist, "YouTube Music") {
+			track.Artist = author
+		}
+	}
+	if emb.Title != "" {
+		t := emb.Title
+		t = strings.TrimSuffix(t, " (Official Video)")
+		t = strings.TrimSuffix(t, " (Official Music Video)")
+		t = strings.TrimSuffix(t, " (Lyric Video)")
+		t = strings.TrimSuffix(t, " (Visualizer)")
+		t = strings.TrimSuffix(t, " [Official Video]")
+		t = strings.TrimSuffix(t, " [Official Music Video]")
+		t = strings.TrimSpace(t)
+
+		if strings.Contains(t, " - ") {
+			parts := strings.SplitN(t, " - ", 2)
+			if track.Artist == "" {
+				track.Artist = strings.TrimSpace(parts[0])
+			}
+			if track.Title == "" || track.Title == emb.Title {
+				track.Title = strings.TrimSpace(parts[1])
+			}
+		} else if track.Title == "" {
+			track.Title = t
+		}
+	}
+}
+
 // GetActiveMediaList queries running macOS media players and active browser tabs.
 func GetActiveMediaList() ([]models.MediaInfo, error) {
 	cmd := exec.Command("osascript", "-l", "JavaScript", "-e", queryScript)
@@ -285,6 +349,10 @@ func GetActiveMediaList() ([]models.MediaInfo, error) {
 	var list []models.MediaInfo
 	if err := json.Unmarshal(out, &list); err != nil {
 		return nil, fmt.Errorf("failed to parse media JSON: %w", err)
+	}
+
+	for i := range list {
+		enrichYouTubeTrack(&list[i])
 	}
 
 	return list, nil

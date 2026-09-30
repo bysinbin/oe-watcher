@@ -241,8 +241,14 @@ func (a *App) pollOnce() {
 	mediaList, err := media.GetActiveMediaList()
 	if err != nil || len(mediaList) == 0 {
 		a.mu.Lock()
+		wasPlaying := a.currentMedia.State == "playing" || a.currentMedia.State == "paused"
 		a.currentMedia = models.MediaInfo{State: "stopped"}
+		a.currentMatch = nil
+		a.lastHandledTrackKey = ""
 		a.mu.Unlock()
+		if wasPlaying {
+			a.notifyStateChanged()
+		}
 		return
 	}
 

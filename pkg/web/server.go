@@ -180,6 +180,13 @@ func (s *Server) isAuthenticated(r *http.Request) bool {
 		}
 	}
 
+	// 3. Query Param kontrolü (EventSource/SSE için)
+	if qToken := r.URL.Query().Get("token"); qToken != "" {
+		if s.validateSession(qToken) {
+			return true
+		}
+	}
+
 	return false
 }
 
