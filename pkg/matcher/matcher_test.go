@@ -1,10 +1,12 @@
 package matcher_test
 
 import (
+	"strings"
 	"testing"
 
 	"medya-filter/pkg/matcher"
 	"medya-filter/pkg/models"
+	"medya-filter/pkg/rules"
 )
 
 func samplePersons() []models.Person {
@@ -117,5 +119,76 @@ func TestMatcherCategoryFilter(t *testing.T) {
 	result2 := m.Match(track2)
 	if result2 == nil {
 		t.Fatalf("Expected match for Abdurrahman Dilipak with Gazeteci filter, got nil")
+	}
+}
+
+func TestMatcherCustomPersonAndAlias(t *testing.T) {
+	tempDir := t.TempDir()
+	rm := rules.NewManager(tempDir)
+
+	// Add custom person: Bayhan
+	_, err := rm.AddPerson("Bayhan", []string{"Şarkıcı"}, []string{"Özel"}, []string{"Bayhan Gürhan"})
+	if err != nil {
+		t.Fatalf("Failed to add custom person: %v", err)
+	}
+
+	// Add custom alias: "Üstad" -> "Cem Adrian"
+	err = rm.SetAlias("Üstad", "Cem Adrian")
+	if err != nil {
+		t.Fatalf("Failed to add alias: %v", err)
+	}
+
+	m := matcher.NewMatcher(samplePersons())
+	m.SetRulesManager(rm)
+
+	// 1. Test custom person match
+	trackBayhan := models.MediaInfo{
+		App:    "YouTube Music",
+		Artist: "Bayhan",
+		Title:  "Merdo",
+	}
+	res1 := m.Match(trackBayhan)
+	if res1 == nil {
+		t.Fatalf("Expected match for custom person Bayhan, got nil")
+	}
+	if !strings.Contains(res1.Person.DisplayName, "Bayhan") {
+		t.Errorf("Expected Bayhan, got %s", res1.Person.DisplayName)
+	}
+
+	// 2. Test alias match
+	trackAlias := models.MediaInfo{
+		App:    "Spotify",
+		Artist: "Üstad",
+		Title:  "Kül",
+	}
+	res2 := m.Match(trackAlias)
+	if res2 == nil {
+		t.Fatalf("Expected match for alias Üstad -> Cem Adrian, got nil")
+	}
+	if res2.Person.DisplayName != "Cem Adrian" {
+		t.Errorf("Expected Cem Adrian, got %s", res2.Person.DisplayName)
+	}
+}
+
+func TestMatcherExcludeList(t *testing.T) {
+	tempDir := t.TempDir()
+	rm := rules.NewManager(tempDir)
+
+	// Exclude Cem Adrian from matching
+	_ = rm.AddExclude("Cem Adrian")
+
+	m := matcher.NewMatcher(samplePersons())
+	m.SetRulesManager(rm)
+
+	track := models.MediaInfo{
+		App:    "Spotify",
+		Artist: "Cem Adrian",
+		Title:  "Kül",
+	}
+
+	// Even though Cem Adrian is in samplePersons, it should be ignored because it is in ExcludeList
+	result := m.Match(track)
+	if result != nil {
+		t.Fatalf("Expected nil for excluded artist Cem Adrian, got match: %v", result)
 	}
 }

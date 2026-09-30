@@ -37,7 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize
   setupFilterButtons();
   setupEventListeners();
+  setupRulesManagement();
   loadPersons();
+  loadRules();
   pollStatus();
   setInterval(pollStatus, 1500);
 
@@ -280,6 +282,220 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }).join('');
   }
+
+  function setupRulesManagement() {
+    // Tab switching
+    document.querySelectorAll('.rule-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.rule-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.rule-tab-pane').forEach(p => p.style.display = 'none');
+
+        btn.classList.add('active');
+        const targetId = btn.getAttribute('data-tab');
+        const targetPane = document.getElementById(targetId);
+        if (targetPane) targetPane.style.display = 'block';
+      });
+    });
+
+    // Form 1: Add Custom Person
+    const formAddPerson = document.getElementById('formAddPerson');
+    if (formAddPerson) {
+      formAddPerson.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('customPersonName').value.trim();
+        const tag = document.getElementById('customPersonTag').value;
+        const topic = document.getElementById('customPersonTopic').value.trim() || 'Özel Kara Liste';
+        const rawAliases = document.getElementById('customPersonAliases').value.trim();
+        const aliases = rawAliases ? rawAliases.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+        try {
+          const res = await fetch('/api/rules/person', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, tags: [tag], topics: [topic], aliases })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            formAddPerson.reset();
+            loadRules();
+            loadPersons();
+          } else {
+            alert('Hata: ' + (data.error || 'Eklenemedi'));
+          }
+        } catch (err) {
+          alert('Bağlantı hatası: ' + err.message);
+        }
+      });
+    }
+
+    // Form 2: Add Alias
+    const formAddAlias = document.getElementById('formAddAlias');
+    if (formAddAlias) {
+      formAddAlias.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const alias = document.getElementById('aliasName').value.trim();
+        const target = document.getElementById('aliasTarget').value.trim();
+
+        try {
+          const res = await fetch('/api/rules/alias', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alias, target })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            formAddAlias.reset();
+            loadRules();
+          } else {
+            alert('Hata: ' + (data.error || 'Kaydedilemedi'));
+          }
+        } catch (err) {
+          alert('Bağlantı hatası: ' + err.message);
+        }
+      });
+    }
+
+    // Form 3: Add Exclude
+    const formAddExclude = document.getElementById('formAddExclude');
+    if (formAddExclude) {
+      formAddExclude.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('excludeName').value.trim();
+
+        try {
+          const res = await fetch('/api/rules/exclude', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            formAddExclude.reset();
+            loadRules();
+          } else {
+            alert('Hata: ' + (data.error || 'Eklenemedi'));
+          }
+        } catch (err) {
+          alert('Bağlantı hatası: ' + err.message);
+        }
+      });
+    }
+  }
+
+  async function loadRules() {
+    try {
+      const res = await fetch('/api/rules');
+      if (!res.ok) return;
+      const rules = await res.json();
+      renderCustomRules(rules);
+    } catch (err) {
+      console.error('Failed to load rules:', err);
+    }
+  }
+
+  function renderCustomRules(rules) {
+    if (!rules) return;
+
+    // Render Custom Persons
+    const customPersonsList = document.getElementById('customPersonsList');
+    if (customPersonsList) {
+      const list = rules.custom_persons || [];
+      if (list.length === 0) {
+        customPersonsList.innerHTML = '<div class="empty-state" style="padding: 10px;">Henüz özel kişi eklenmedi.</div>';
+      } else {
+        customPersonsList.innerHTML = list.map(p => `
+          <div class="custom-item">
+            <div>
+              <span class="custom-item-name">${escapeHTML(p.display_name)}</span>
+              <span class="custom-item-meta">${escapeHTML((p.tags || []).join(', '))} • ${escapeHTML((p.topics || []).join(', '))}</span>
+            </div>
+            <button class="btn-icon-del" onclick="deleteCustomPerson('${p.id}')" title="Sil">✕</button>
+          </div>
+        `).join('');
+      }
+    }
+
+    // Render Aliases
+    const customAliasesList = document.getElementById('customAliasesList');
+    if (customAliasesList) {
+      const aliases = rules.aliases || {};
+      const entries = Object.entries(aliases);
+      if (entries.length === 0) {
+        customAliasesList.innerHTML = '<div class="empty-state" style="padding: 10px;">Henüz özel alias tanımlanmadı.</div>';
+      } else {
+        customAliasesList.innerHTML = entries.map(([alias, target]) => `
+          <div class="custom-item">
+            <div>
+              <span class="custom-item-name">${escapeHTML(alias)}</span>
+              <span class="custom-item-meta">➔ ${escapeHTML(target)}</span>
+            </div>
+            <button class="btn-icon-del" onclick="deleteCustomAlias('${escapeHTML(alias)}')" title="Sil">✕</button>
+          </div>
+        `).join('');
+      }
+    }
+
+    // Render Exclude List
+    const customExcludeList = document.getElementById('customExcludeList');
+    if (customExcludeList) {
+      const excludes = rules.exclude_list || [];
+      if (excludes.length === 0) {
+        customExcludeList.innerHTML = '<div class="empty-state" style="padding: 10px;">Beyaz listede kimse yok.</div>';
+      } else {
+        customExcludeList.innerHTML = excludes.map(name => `
+          <div class="custom-item">
+            <div>
+              <span class="custom-item-name">🛡️ ${escapeHTML(name)}</span>
+              <span class="custom-item-meta">(Muaf)</span>
+            </div>
+            <button class="btn-icon-del" onclick="deleteCustomExclude('${escapeHTML(name)}')" title="Sil">✕</button>
+          </div>
+        `).join('');
+      }
+    }
+  }
+
+  // Global window functions for inline delete onclick
+  window.deleteCustomPerson = async (id) => {
+    if (!confirm('Bu kişiyi özel listeden silmek istiyor musunuz?')) return;
+    try {
+      await fetch('/api/rules/person', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      loadRules();
+      loadPersons();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.deleteCustomAlias = async (alias) => {
+    try {
+      await fetch('/api/rules/alias', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias })
+      });
+      loadRules();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.deleteCustomExclude = async (name) => {
+    try {
+      await fetch('/api/rules/exclude', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      loadRules();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   function escapeHTML(str) {
     if (!str) return '';

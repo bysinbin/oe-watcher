@@ -12,11 +12,13 @@ import (
 	"medya-filter/pkg/media"
 	"medya-filter/pkg/models"
 	"medya-filter/pkg/notifier"
+	"medya-filter/pkg/rules"
 )
 
 type App struct {
 	mu                  sync.RWMutex
 	client              *api.Client
+	rulesMgr            *rules.Manager
 	matcher             *matcher.Matcher
 	currentMedia        models.MediaInfo
 	currentMatch        *models.MatchResult
@@ -36,9 +38,14 @@ func NewApp(dataDir string, autoSkip, enableDialog bool, pollInterval time.Durat
 		pollInterval = 1500 * time.Millisecond
 	}
 
+	rulesMgr := rules.NewManager(dataDir)
+	m := matcher.NewMatcher(nil)
+	m.SetRulesManager(rulesMgr)
+
 	return &App{
 		client:           api.NewClient(dataDir),
-		matcher:          matcher.NewMatcher(nil),
+		rulesMgr:         rulesMgr,
+		matcher:          m,
 		autoSkip:         autoSkip,
 		enableDialog:     enableDialog,
 		pollInterval:     pollInterval,
@@ -254,6 +261,7 @@ type AppState struct {
 	TotalPersons     int                  `json:"total_persons"`
 	History          []models.HistoryItem `json:"history"`
 	LastSync         string               `json:"last_sync"`
+	Rules            rules.RulesSnapshot  `json:"rules"`
 }
 
 func (a *App) GetState() AppState {
@@ -276,6 +284,7 @@ func (a *App) GetState() AppState {
 		TotalPersons:     len(a.matcher.GetPersons()),
 		History:          a.history,
 		LastSync:         lastSyncStr,
+		Rules:            a.rulesMgr.GetSnapshot(),
 	}
 }
 
@@ -299,4 +308,60 @@ func (a *App) SetFilters(categories, topics []string) {
 // GetAllPersons returns all indexed persons.
 func (a *App) GetAllPersons() []models.Person {
 	return a.matcher.GetPersons()
+}
+
+// GetRulesManager returns the rules manager.
+func (a *App) GetRulesManager() *rules.Manager {
+	return a.rulesMgr
+}
+
+// GetMatcher returns the matcher engine.
+func (a *App) GetMatcher() *matcher.Matcher {
+	return a.matcher
+}
+
+// AddCustomPerson adds a custom person to the rules and rebuilds matcher.
+func (a *App) AddCustomPerson(name string, tags, topics, aliases []string) (rules.CustomPerson, error) {
+	cp, err := a.rulesMgr.AddPerson(name, tags, topics, aliases)
+	if err == nil {
+		a.matcher.RebuildIndex()
+	}
+	return cp, err
+}
+
+// RemoveCustomPerson removes a custom person and rebuilds matcher.
+func (a *App) RemoveCustomPerson(id string) bool {
+	removed := a.rulesMgr.RemovePerson(id)
+	if removed {
+		a.matcher.RebuildIndex()
+	}
+	return removed
+}
+
+// SetCustomAlias maps an alias name to a target person name and rebuilds matcher.
+func (a *App) SetCustomAlias(alias, target string) error {
+	err := a.rulesMgr.SetAlias(alias, target)
+	if err == nil {
+		a.matcher.RebuildIndex()
+	}
+	return err
+}
+
+// RemoveCustomAlias removes an alias mapping and rebuilds matcher.
+func (a *App) RemoveCustomAlias(alias string) bool {
+	removed := a.rulesMgr.RemoveAlias(alias)
+	if removed {
+		a.matcher.RebuildIndex()
+	}
+	return removed
+}
+
+// AddExclude adds a name to the whitelist.
+func (a *App) AddExclude(name string) error {
+	return a.rulesMgr.AddExclude(name)
+}
+
+// RemoveExclude removes a name from the whitelist.
+func (a *App) RemoveExclude(name string) bool {
+	return a.rulesMgr.RemoveExclude(name)
 }

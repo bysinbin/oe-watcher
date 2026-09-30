@@ -39,6 +39,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/sync", s.handleSync)
 	mux.HandleFunc("/api/persons", s.handlePersons)
+	mux.HandleFunc("/api/rules", s.handleRules)
+	mux.HandleFunc("/api/rules/person", s.handleRulePerson)
+	mux.HandleFunc("/api/rules/alias", s.handleRuleAlias)
+	mux.HandleFunc("/api/rules/exclude", s.handleRuleExclude)
 
 	// Embedded Static files
 	staticSub, err := fs.Sub(staticFS, "static")
@@ -193,4 +197,117 @@ func (s *Server) handlePersons(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(filtered)
+}
+
+func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	snap := s.app.GetRulesManager().GetSnapshot()
+	_ = json.NewEncoder(w).Encode(snap)
+}
+
+type AddPersonReq struct {
+	Name    string   `json:"name"`
+	Tags    []string `json:"tags"`
+	Topics  []string `json:"topics"`
+	Aliases []string `json:"aliases"`
+}
+
+type DelPersonReq struct {
+	ID string `json:"id"`
+}
+
+func (s *Server) handleRulePerson(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodPost {
+		var req AddPersonReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		cp, err := s.app.AddCustomPerson(req.Name, req.Tags, req.Topics, req.Aliases)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(cp)
+		return
+	} else if r.Method == http.MethodDelete {
+		var req DelPersonReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ok := s.app.RemoveCustomPerson(req.ID)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"success": ok})
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+type AliasReq struct {
+	Alias  string `json:"alias"`
+	Target string `json:"target"`
+}
+
+func (s *Server) handleRuleAlias(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodPost {
+		var req AliasReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		err := s.app.SetCustomAlias(req.Alias, req.Target)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		return
+	} else if r.Method == http.MethodDelete {
+		var req AliasReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ok := s.app.RemoveCustomAlias(req.Alias)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"success": ok})
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+type ExcludeReq struct {
+	Name string `json:"name"`
+}
+
+func (s *Server) handleRuleExclude(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodPost {
+		var req ExcludeReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		err := s.app.AddExclude(req.Name)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		return
+	} else if r.Method == http.MethodDelete {
+		var req ExcludeReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ok := s.app.RemoveExclude(req.Name)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"success": ok})
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }

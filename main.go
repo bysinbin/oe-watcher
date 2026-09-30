@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"medya-filter/pkg/app"
+	"medya-filter/pkg/models"
 	"medya-filter/pkg/permission"
 	"medya-filter/pkg/web"
 )
@@ -105,22 +106,33 @@ func main() {
 
 func runTest(app *app.App, query string) {
 	fmt.Printf("\n🔍 Test Sorgusu: '%s'\n", query)
-	persons := app.GetAllPersons()
 
-	matchFound := false
-	for _, p := range persons {
-		cleanQ := strings.ToLower(strings.TrimSpace(query))
-		cleanName := strings.ToLower(p.DisplayName)
-		if strings.Contains(cleanName, cleanQ) || strings.Contains(cleanQ, cleanName) {
-			matchFound = true
-			fmt.Println("\n\033[1;31m[EŞLEŞME BULUNDU]\033[0m")
-			fmt.Printf("• İsim Soyisim : \033[1;33m%s\033[0m\n", p.DisplayName)
-			fmt.Printf("• Kategori     : \033[1;36m%s\033[0m\n", strings.Join(p.Tags, ", "))
-			fmt.Printf("• Konu(lar)    : \033[1;35m%s\033[0m\n", strings.Join(p.Topics, ", "))
+	if app.GetRulesManager() != nil && app.GetRulesManager().IsExcluded(query) {
+		fmt.Printf("\n\033[1;33m[BEYAZ LİSTE // EXCLUDED]\033[0m\n")
+		fmt.Printf("• '%s' beyaz listede (exclude list) yer aldığı için eşleşse bile filtrelenmeyecek/atlanmayacak.\n", query)
+		return
+	}
+
+	info := models.MediaInfo{
+		Title:  query,
+		Artist: query,
+	}
+
+	match := app.GetMatcher().Match(info)
+	if match != nil {
+		topicsStr := strings.Join(match.Topics, ", ")
+		if topicsStr == "" {
+			topicsStr = "-"
 		}
+		fmt.Println("\n\033[1;31m[EŞLEŞME BULUNDU]\033[0m")
+		fmt.Printf("• İsim Soyisim : \033[1;33m%s\033[0m\n", match.Person.DisplayName)
+		fmt.Printf("• Kategori     : \033[1;36m%s\033[0m\n", match.Category)
+		fmt.Printf("• Konu(lar)    : \033[1;35m%s\033[0m\n", topicsStr)
+		if match.MatchedName != "" {
+			fmt.Printf("• Eşleşen İsim / Alias: \033[1;32m%s\033[0m\n", match.MatchedName)
+		}
+		return
 	}
 
-	if !matchFound {
-		fmt.Println("❌ Eşleşen kişi bulunamadı.")
-	}
+	fmt.Println("❌ Eşleşen kişi bulunamadı.")
 }

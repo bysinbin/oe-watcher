@@ -121,6 +121,71 @@
           </div>
         </div>
 
+        <!-- Custom Rules Management Card -->
+        <div class="card custom-rules-card">
+          <div class="card-header">
+            <span class="section-label">ÖZEL KURALLAR //</span>
+            <div class="rules-tabs">
+              <button class="rule-tab-btn active" data-tab="tabAddPerson">+ Kişi Ekle</button>
+              <button class="rule-tab-btn" data-tab="tabAlias">Alias (Mahlas)</button>
+              <button class="rule-tab-btn" data-tab="tabExclude">Exclude (Beyaz Liste)</button>
+            </div>
+          </div>
+
+          <!-- Tab 1: Add Person -->
+          <div class="rule-tab-pane active" id="tabAddPerson">
+            <form id="formAddPerson" class="rules-form">
+              <div class="form-row">
+                <input type="text" id="customPersonName" placeholder="Sanatçı / Kişi Adı (örn: Bayhan)" required>
+                <select id="customPersonTag">
+                  <option value="Şarkıcı">Şarkıcı</option>
+                  <option value="Oyuncu">Oyuncu</option>
+                  <option value="Yazar">Yazar</option>
+                  <option value="Gazeteci">Gazeteci</option>
+                  <option value="Influencer">Influencer</option>
+                  <option value="Spor">Spor</option>
+                  <option value="Siyasi">Siyasi</option>
+                  <option value="Marka">Marka</option>
+                  <option value="Aktivist">Aktivist</option>
+                  <option value="Din Adamı">Din Adamı</option>
+                  <option value="Diğer">Diğer</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <input type="text" id="customPersonTopic" placeholder="Konu / Gerekçe (örn: Özel Kara Liste)">
+                <input type="text" id="customPersonAliases" placeholder="Ek Mahlaslar (virgülle ayırın, örn: Bayhan Gürhan)">
+              </div>
+              <button type="submit" class="btn btn-danger">+ Kara Listeye Ekle</button>
+            </form>
+            <div class="custom-items-list" id="customPersonsList"></div>
+          </div>
+
+          <!-- Tab 2: Custom Alias -->
+          <div class="rule-tab-pane" id="tabAlias" style="display: none;">
+            <p class="rule-desc">Medyada geçen takma adları veritabanındaki hedef kişiye eşleştirin.</p>
+            <form id="formAddAlias" class="rules-form">
+              <div class="form-row">
+                <input type="text" id="aliasName" placeholder="Takma Ad / Kısaltma (örn: Süperstar)" required>
+                <input type="text" id="aliasTarget" placeholder="Hedef Kişi (örn: Ajda Pekkan)" required>
+              </div>
+              <button type="submit" class="btn btn-secondary">+ Alias Kaydet</button>
+            </form>
+            <div class="custom-items-list" id="customAliasesList"></div>
+          </div>
+
+          <!-- Tab 3: Exclude List (Whitelist) -->
+          <div class="rule-tab-pane" id="tabExclude" style="display: none;">
+            <p class="rule-desc">Bu listedeki sanatçı veya isimler kara listede eşleşse dahi ASLA uyarılmaz veya geçilmez.</p>
+            <form id="formAddExclude" class="rules-form">
+              <div class="form-row">
+                <input type="text" id="excludeName" placeholder="Muaf Tutulacak Sanatçı / Şarkı (örn: Ahmet Aslan)" required>
+                <button type="submit" class="btn btn-secondary">+ Beyaz Listeye Ekle</button>
+              </div>
+            </form>
+            <div class="custom-items-list" id="customExcludeList"></div>
+          </div>
+        </div>
+
         <!-- Detection History Log -->
         <div class="card history-card">
           <div class="card-header">

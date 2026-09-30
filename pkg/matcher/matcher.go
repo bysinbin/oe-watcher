@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"medya-filter/pkg/models"
+	"medya-filter/pkg/rules"
 )
 
 var (
@@ -29,10 +30,12 @@ type IndexedPerson struct {
 
 type Matcher struct {
 	mu                sync.RWMutex
+	apiPersons        []models.Person
 	persons           []models.Person
 	indexedPersons    []IndexedPerson
 	AllowedCategories []string
 	AllowedTopics     []string
+	rulesMgr          *rules.Manager
 }
 
 func NewMatcher(persons []models.Person) *Matcher {
@@ -41,21 +44,59 @@ func NewMatcher(persons []models.Person) *Matcher {
 	return m
 }
 
+func (m *Matcher) SetRulesManager(rm *rules.Manager) {
+	m.mu.Lock()
+	m.rulesMgr = rm
+	m.mu.Unlock()
+	m.RebuildIndex()
+}
+
 func (m *Matcher) SetPersons(persons []models.Person) {
+	m.mu.Lock()
+	m.apiPersons = persons
+	m.mu.Unlock()
+	m.RebuildIndex()
+}
+
+// RebuildIndex updates indexed persons with API persons, custom persons, and aliases.
+func (m *Matcher) RebuildIndex() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.persons = persons
-	m.indexedPersons = make([]IndexedPerson, 0, len(persons))
+	var allPersons []models.Person
+	allPersons = append(allPersons, m.apiPersons...)
 
-	for _, p := range persons {
+	var customAliases map[string]string
+	if m.rulesMgr != nil {
+		allPersons = append(allPersons, m.rulesMgr.GetCustomPersonsAsModels()...)
+		snap := m.rulesMgr.GetSnapshot()
+		customAliases = snap.Aliases
+	}
+
+	m.persons = allPersons
+	m.indexedPersons = make([]IndexedPerson, 0, len(allPersons))
+
+	for _, p := range allPersons {
 		names := p.ParsedNames()
+
+		// Add custom aliases mapped to this person
+		if customAliases != nil {
+			for alias, target := range customAliases {
+				if strings.EqualFold(target, p.DisplayName) {
+					names = append(names, alias)
+				}
+			}
+		}
+
 		var candidates []NormalizedCandidate
+		seen := make(map[string]bool)
+
 		for _, name := range names {
 			clean := strings.TrimSpace(name)
-			if clean == "" {
+			if clean == "" || seen[strings.ToLower(clean)] {
 				continue
 			}
+			seen[strings.ToLower(clean)] = true
 
 			turkLower := strings.ToLowerSpecial(unicode.TurkishCase, clean)
 			folded := FoldDiacritics(turkLower)
@@ -143,6 +184,18 @@ func (m *Matcher) Match(track models.MediaInfo) *models.MatchResult {
 		pClean := CleanAndFold(part)
 		if pClean != "" {
 			artistPartsFolded = append(artistPartsFolded, pClean)
+		}
+	}
+
+	// Whitelist / Exclude check
+	if m.rulesMgr != nil {
+		if m.rulesMgr.IsExcluded(track.Artist) || m.rulesMgr.IsExcluded(track.Title) {
+			return nil
+		}
+		for _, part := range artistPartsRaw {
+			if m.rulesMgr.IsExcluded(part) {
+				return nil
+			}
 		}
 	}
 
