@@ -2,15 +2,15 @@
   "custom_persons": [
     {
       "id": "custom-1790759904126704000",
-      "display_name": "Bayhan",
+      "display_name": "Ersin Koç",
       "tags": [
-        "Şarkıcı"
+        "tw"
       ],
       "topics": [
         "Özel Kara Liste"
       ],
       "aliases": [
-        "Bayhan Gürhan"
+        "Ersin Koç"
       ],
       "created_at": "2026-09-30 12:18:24"
     },
@@ -32,6 +32,6 @@
     "Süperstar": "Ajda Pekkan"
   },
   "exclude_list": [
-    "Cem Adrian"
+    "Beşiktaş JK"
   ]
 }

@@ -13,9 +13,14 @@
   let shieldedCount = 0;
   let scanTimer = null;
 
-  // Modern block & card selectors across YouTube, X/Twitter, Reddit, and News portals
+  // Targeted block and card selectors for exact in-card shielding
   const BLOCK_SELECTORS = [
-    // YouTube
+    // Twitter / X (UserCell on People search, tweet on feeds)
+    '[data-testid="UserCell"]',
+    'article[data-testid="tweet"]',
+    '[data-testid="cellInnerDiv"]',
+    '[data-testid="trend"]',
+    // YouTube (Video, Channel, Mix, Shorts, Shelf, Lockup)
     'ytd-channel-renderer',
     'ytd-video-renderer',
     'ytd-rich-item-renderer',
@@ -28,14 +33,11 @@
     'ytd-movie-renderer',
     'ytd-show-renderer',
     'yt-lockup-view-model',
-    // Twitter / X
-    'article[data-testid="tweet"]',
-    '[data-testid="cellInnerDiv"]',
-    'article',
     // Reddit
     'shreddit-post',
     '[data-testid="post-container"]',
     // News / Forums / Common layouts
+    'article',
     '.entry-item',
     '.news-item',
     '.media-item',
@@ -144,7 +146,7 @@
     }
   }
 
-  // Find the most appropriate block card or container for modern web layouts
+  // Find the exact block card or container for modern web layouts
   function findBlockContainer(node) {
     if (!node) return null;
     let curr = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
@@ -156,7 +158,7 @@
         }
       }
 
-      // Fallback for standard tags
+      // Fallback for standard text blocks
       const tag = curr.tagName.toLowerCase();
       if (tag === 'p' || tag === 'li' || tag === 'blockquote') {
         return curr;
@@ -165,19 +167,26 @@
       curr = curr.parentElement;
     }
 
-    // Direct element parent fallback
     return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   }
 
-  // Apply shield with modern glassmorphism blur and confirmation prompt
+  // Apply shield directly inside container as an overlay without disturbing virtual scrollers
   function shieldElement(container, matchInfo) {
     if (!container || container.hasAttribute('data-oe-shielded')) return;
     container.setAttribute('data-oe-shielded', 'true');
 
-    // Add blurred visual shield to container
-    container.classList.add('oe-shielded-target');
+    // Ensure container has relative positioning context and minimum height for overlay
+    const computed = window.getComputedStyle(container);
+    if (computed.position === 'static') {
+      container.style.position = 'relative';
+    }
+    if (container.offsetHeight < 110) {
+      container.style.minHeight = '110px';
+    }
 
-    // Create prompt banner
+    container.classList.add('oe-shielded-container');
+
+    // Create overlay banner
     const banner = document.createElement('div');
     banner.className = 'oe-shield-banner';
 
@@ -217,47 +226,60 @@
     btnReveal.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
-      container.classList.remove('oe-shielded-target');
-      container.classList.add('oe-revealed-target');
+      container.classList.remove('oe-shielded-container');
+      container.classList.add('oe-revealed-container');
       banner.style.display = 'none';
 
       const revertTag = document.createElement('div');
       revertTag.className = 'oe-revert-tag';
       revertTag.innerHTML = `
-        <span>⚠️ [${escapeHTML(matchInfo.displayName)}] İçeriği Gösterildi</span>
+        <span>⚠️ [${escapeHTML(matchInfo.displayName)}] Gösterildi</span>
         <button type="button" class="oe-btn-rehide">Yeniden Gizle</button>
       `;
       revertTag.querySelector('.oe-btn-rehide').addEventListener('click', (ev) => {
         ev.stopPropagation();
-        container.classList.add('oe-shielded-target');
-        container.classList.remove('oe-revealed-target');
+        ev.preventDefault();
+        container.classList.add('oe-shielded-container');
+        container.classList.remove('oe-revealed-container');
         banner.style.display = 'flex';
         revertTag.remove();
       });
 
-      container.insertAdjacentElement('beforebegin', revertTag);
+      container.appendChild(revertTag);
     });
 
-    // Action: "Gizli Tut" (Fully collapse container)
+    // Action: "Gizli Tut" (Cleanly collapse container into a thin bar without breaking scroller heights)
     const btnDismiss = banner.querySelector('.oe-btn-dismiss');
     btnDismiss.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
-      container.style.display = 'none';
+      container.style.minHeight = '36px';
+      container.style.maxHeight = '36px';
+      container.style.height = '36px';
+      container.style.overflow = 'hidden';
       banner.innerHTML = `
-        <div class="oe-shield-body" style="padding: 6px 12px; margin: 0; align-items: center;">
-          <span style="font-size: 0.8rem; color: #94a3b8;">🛡️ [${escapeHTML(matchInfo.displayName)}] içeren paylaşım gizlendi.</span>
-          <button type="button" class="oe-btn oe-btn-reveal" style="padding: 3px 10px; font-size: 0.72rem; margin-left: auto;">Geri Getir</button>
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <span style="font-size: 0.78rem; color: #94a3b8; font-weight: 500;">
+            🛡️ [${escapeHTML(matchInfo.displayName)}] gizlendi.
+          </span>
+          <button type="button" class="oe-btn oe-btn-reveal" style="padding: 2px 8px; font-size: 0.7rem;">
+            Geri Getir
+          </button>
         </div>
       `;
-      banner.querySelector('.oe-btn-reveal').addEventListener('click', () => {
-        container.style.display = '';
-        container.classList.remove('oe-shielded-target');
+      banner.querySelector('.oe-btn-reveal').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        container.style.minHeight = '';
+        container.style.maxHeight = '';
+        container.style.height = '';
+        container.classList.remove('oe-shielded-container');
         banner.remove();
       });
     });
 
-    container.insertAdjacentElement('beforebegin', banner);
+    // Append banner inside container as an absolute overlay
+    container.appendChild(banner);
     shieldedCount++;
     chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: shieldedCount });
   }
@@ -282,12 +304,11 @@
       }
     }
 
-    // 1. Scan attributes commonly containing full titles on YouTube & social media
-    const attrElements = (rootNode === document.body ? document : rootNode).querySelectorAll(
-      'a[title], a[aria-label], yt-formatted-string[title], yt-formatted-string[aria-label], [aria-label], img[alt]'
-    );
-    for (let i = 0; i < attrElements.length; i++) {
-      const el = attrElements[i];
+    // 1. Scan attributes on targeted elements (titles, handles, media labels)
+    const attrSelector = 'a[title], a[aria-label], yt-formatted-string[title], yt-formatted-string[aria-label], [data-testid="UserCell"] [aria-label], article [aria-label], img[alt]';
+    const attrNodes = (rootNode === document.body ? document : rootNode).querySelectorAll(attrSelector);
+    for (let i = 0; i < attrNodes.length; i++) {
+      const el = attrNodes[i];
       if (el.closest('.oe-shield-banner') || el.closest('.oe-revert-tag') || el.closest('[data-oe-shielded]')) continue;
 
       const title = el.getAttribute('title');
@@ -348,7 +369,7 @@
     }, 150);
   }
 
-  // Observe DOM for infinite scrolling & dynamic SPA frameworks (YouTube, Twitter, Reddit)
+  // Observe DOM for infinite scrolling & dynamic SPA frameworks (X/Twitter, YouTube, Reddit)
   function startObserver() {
     const observer = new MutationObserver(() => {
       triggerScan();
@@ -359,7 +380,7 @@
       subtree: true
     });
 
-    // YouTube SPA navigation events
+    // YouTube & SPA navigation events
     window.addEventListener('yt-navigate-finish', () => {
       setTimeout(triggerScan, 200);
     });
@@ -388,9 +409,10 @@
       config.enabled = changes.settings.newValue ? changes.settings.newValue.enabled !== false : true;
       if (!config.enabled) {
         document.querySelectorAll('.oe-shield-banner, .oe-revert-tag').forEach(el => el.remove());
-        document.querySelectorAll('.oe-shielded-target').forEach(el => {
-          el.classList.remove('oe-shielded-target');
+        document.querySelectorAll('.oe-shielded-container').forEach(el => {
+          el.classList.remove('oe-shielded-container');
           el.removeAttribute('data-oe-shielded');
+          el.style.minHeight = '';
         });
         shieldedCount = 0;
         chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: 0 });
