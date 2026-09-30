@@ -298,3 +298,39 @@ func (m *Manager) GetCustomPersonsAsModels() []models.Person {
 	}
 	return res
 }
+
+// Export returns formatted JSON bytes representing the custom rules.
+func (m *Manager) Export() ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	snap := RulesSnapshot{
+		CustomPersons: m.Persons,
+		Aliases:       m.Aliases,
+		ExcludeList:   m.ExcludeList,
+	}
+	return json.MarshalIndent(snap, "", "  ")
+}
+
+// Import unmarshals JSON bytes and replaces the rules, then saves to file.
+func (m *Manager) Import(data []byte) error {
+	var snap RulesSnapshot
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return fmt.Errorf("geçersiz kurallar JSON formatı: %w", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if snap.CustomPersons != nil {
+		m.Persons = snap.CustomPersons
+	}
+	if snap.Aliases != nil {
+		m.Aliases = snap.Aliases
+	}
+	if snap.ExcludeList != nil {
+		m.ExcludeList = snap.ExcludeList
+	}
+
+	return m.saveLocked()
+}

@@ -32,6 +32,9 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
           <span id="btnSyncText">API Senkronize Et</span>
         </button>
+        <button id="btnOpenSettings" class="btn btn-secondary" title="Uygulama ve config.json Ayarları">
+          <span>⚙️ Ayarlar</span>
+        </button>
         <button id="btnLogout" class="btn btn-secondary btn-logout" style="display: none;" title="Güvenli Çıkış Yap">
           <span>🔒 Çıkış</span>
         </button>
@@ -84,12 +87,16 @@
             </div>
             <div class="track-details">
               <h2 class="track-title" id="trackTitle">Medya Algılanmadı</h2>
-              <p class="track-artist" id="trackArtist">Spotify, Apple Music veya YouTube açın</p>
+              <p class="track-artist" id="trackArtist">Spotify, Apple Music, YouTube veya Tarayıcı açın</p>
               <span class="track-album" id="trackAlbum"></span>
             </div>
           </div>
 
           <div class="player-controls">
+            <button id="btnPlayPause" class="btn btn-secondary btn-control-play" title="Oynat / Duraklat" disabled>
+              <span id="playPauseIcon">⏯️</span>
+              <span id="playPauseText">Oynat / Duraklat</span>
+            </button>
             <button id="btnSkipManual" class="btn btn-skip" disabled>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
               Şarkıyı Geç
@@ -100,6 +107,28 @@
                 <span class="slider"></span>
               </label>
               <span class="switch-label">Otomatik Geçiş (Auto-Skip)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Analytics Stats Card -->
+        <div class="card stats-card" id="statsCard">
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-num" id="statTotalDetections">0</span>
+              <span class="stat-label">🚨 Toplam Tespit</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-num" id="statAutoSkips">0</span>
+              <span class="stat-label">⚡ Otomatik Geçilen</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-num" id="statManualSkips">0</span>
+              <span class="stat-label">⏩ Manuel Geçilen</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-num stat-top" id="statTopPerson">-</span>
+              <span class="stat-label">🏆 En Sık Tespit</span>
             </div>
           </div>
         </div>
@@ -132,6 +161,7 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
               Şarkıyı Hemen Geç
             </button>
+            <button id="btnAlertSnooze" class="btn btn-secondary" title="Bu sanatçıya 1 saatliğine izin ver">⏳ 1 Saat İzin Ver</button>
             <button id="btnAlertKeep" class="btn btn-secondary">Dinlemeye Devam Et</button>
             <button id="btnAlertAddAlias" class="btn btn-secondary" title="Bu sanatçıya alias/mahlas ekle">+ Mahlas Ekle</button>
             <button id="btnAlertAddExclude" class="btn btn-secondary" title="Bu sanatçıyı muaf tut (beyaz listeye ekle)">🛡️ Muaf Tut</button>
@@ -159,10 +189,17 @@
         <div class="card custom-rules-card">
           <div class="card-header">
             <span class="section-label">ÖZEL KURALLAR //</span>
-            <div class="rules-tabs">
-              <button class="rule-tab-btn active" data-tab="tabAddPerson">+ Kişi Ekle</button>
-              <button class="rule-tab-btn" data-tab="tabAlias">Alias (Mahlas)</button>
-              <button class="rule-tab-btn" data-tab="tabExclude">Exclude (Beyaz Liste)</button>
+            <div class="rules-header-right">
+              <div class="rules-tabs">
+                <button class="rule-tab-btn active" data-tab="tabAddPerson">+ Kişi Ekle</button>
+                <button class="rule-tab-btn" data-tab="tabAlias">Alias (Mahlas)</button>
+                <button class="rule-tab-btn" data-tab="tabExclude">Exclude (Beyaz Liste)</button>
+              </div>
+              <div class="rules-io-btns">
+                <button id="btnExportRules" class="btn-micro" title="Özel kuralları JSON olarak indir">⬇️ Yedekle</button>
+                <button id="btnImportRules" class="btn-micro" title="Özel kuralları JSON dosyasından yükle">⬆️ Yükle</button>
+                <input type="file" id="rulesFileInput" accept=".json" style="display: none;">
+              </div>
             </div>
           </div>
 
@@ -332,6 +369,121 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btnModalCancel">İptal</button>
         <button class="btn btn-danger" id="btnModalSave">+ Alias Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Application Configuration & Settings -->
+  <div class="modal-backdrop" id="settingsModal" style="display: none;">
+    <div class="modal-card settings-modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="slash">//</span>
+          <h3>YAPILANDIRMA & AYARLAR (CONFIG)</h3>
+        </div>
+        <button class="modal-close-btn" id="btnSettingsClose">✕</button>
+      </div>
+      <div class="modal-body settings-modal-body">
+        <form id="settingsForm">
+          <!-- Switches Grid -->
+          <div class="settings-switches-grid">
+            <div class="settings-switch-item">
+              <label class="switch">
+                <input type="checkbox" id="cfgAutoSkip">
+                <span class="slider"></span>
+              </label>
+              <div class="switch-meta">
+                <strong>Otomatik Geçiş (Auto-Skip)</strong>
+                <span>Kara listedeki şarkılar onay sormadan doğrudan geçilir.</span>
+              </div>
+            </div>
+
+            <div class="settings-switch-item">
+              <label class="switch">
+                <input type="checkbox" id="cfgEnableDialog">
+                <span class="slider"></span>
+              </label>
+              <div class="switch-meta">
+                <strong>macOS Onay Penceresi (Dialog)</strong>
+                <span>Eşleşme tespitinde ekranda Geç/Dinle onay penceresi açılır.</span>
+              </div>
+            </div>
+
+            <div class="settings-switch-item">
+              <label class="switch">
+                <input type="checkbox" id="cfgFuzzyMatching">
+                <span class="slider"></span>
+              </label>
+              <div class="switch-meta">
+                <strong>Bulanık Eşleştirme (Fuzzy Match)</strong>
+                <span>Harf ve yazım hatalarında Levenshtein benzerlik skoru ile yakalar.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slider: Fuzzy Threshold -->
+          <div class="settings-row" id="rowFuzzyThreshold">
+            <div class="setting-label-row">
+              <label for="cfgFuzzyThreshold">Bulanık Eşleşme Hassasiyeti:</label>
+              <span class="threshold-val" id="fuzzyThresholdVal">%85</span>
+            </div>
+            <input type="range" id="cfgFuzzyThreshold" min="70" max="98" step="1" value="85" class="range-slider">
+          </div>
+
+          <!-- Select: Poll Interval & Category -->
+          <div class="settings-row-pair">
+            <div class="settings-field">
+              <label for="cfgPollInterval">Medya Tarama Sıklığı:</label>
+              <select id="cfgPollInterval">
+                <option value="1000">1000 ms (Çok Hızlı)</option>
+                <option value="1500">1500 ms (Önerilen)</option>
+                <option value="2000">2000 ms (Normal)</option>
+                <option value="3000">3000 ms (Tasarruf Modu)</option>
+              </select>
+            </div>
+            <div class="settings-field">
+              <label for="cfgCategory">Varsayılan Kategori:</label>
+              <select id="cfgCategory">
+                <option value="HEPSİ">HEPSİ (Tüm Listeyi Kapsar)</option>
+                <option value="ŞARKICI">ŞARKICI</option>
+                <option value="OYUNCU">OYUNCU</option>
+                <option value="YAZAR">YAZAR</option>
+                <option value="GAZETECİ">GAZETECİ</option>
+                <option value="INFLUENCER">INFLUENCER</option>
+                <option value="SPOR">SPOR</option>
+                <option value="SİYASİ">SİYASİ</option>
+                <option value="MARKA">MARKA</option>
+                <option value="AKTİVİST">AKTİVİST</option>
+                <option value="DİN ADAMI">DİN ADAMI</option>
+                <option value="DİĞER">DİĞER</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Password & Web Port -->
+          <div class="settings-row-pair">
+            <div class="settings-field">
+              <label for="cfgWebPassword">Web Paneli Giriş Parolası:</label>
+              <input type="text" id="cfgWebPassword" placeholder="Parola (örn: admin)">
+            </div>
+            <div class="settings-field">
+              <label for="cfgWebPort">Web Portu:</label>
+              <input type="number" id="cfgWebPort" placeholder="8080">
+            </div>
+          </div>
+
+          <div class="settings-field">
+            <label for="cfgApiUrl">OE List API URL:</label>
+            <input type="text" id="cfgApiUrl" placeholder="https://oelist-api.frax.tr/v1">
+          </div>
+
+          <p class="modal-hint">💾 <strong>config.json otomatik güncellenir:</strong> Kaydettiğiniz tüm ayarlar <code>config.json</code> dosyasına kaydedilir ve bir sonraki açılışlarda korunur.</p>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="btnSettingsCancel">İptal</button>
+            <button type="submit" class="btn btn-danger" id="btnSettingsSave">💾 Ayarları config.json'a Kaydet</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

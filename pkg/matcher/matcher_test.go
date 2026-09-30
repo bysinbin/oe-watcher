@@ -212,3 +212,23 @@ func TestMatcherExcludeList(t *testing.T) {
 		t.Fatalf("Expected nil for excluded artist Cem Adrian, got match: %v", result)
 	}
 }
+
+func TestMatcherFuzzyMatch(t *testing.T) {
+	m := matcher.NewMatcher(samplePersons())
+	m.SetFuzzy(true, 0.85)
+
+	// "Cem Adriann" has 1 typo letter compared to "Cem Adrian" (len 10 vs 11, dist 1, sim ~91%)
+	track := models.MediaInfo{
+		App:    "Spotify",
+		Artist: "Cem Adriann",
+		Title:  "Kül",
+	}
+
+	result := m.Match(track)
+	if result == nil {
+		t.Fatalf("Expected fuzzy match for 'Cem Adriann', got nil")
+	}
+	if !strings.Contains(result.MatchedName, "Bulanık") {
+		t.Errorf("Expected matched name to indicate fuzzy match, got: %s", result.MatchedName)
+	}
+}

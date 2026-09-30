@@ -11,9 +11,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const playerSourceBadge = document.getElementById('playerSourceBadge');
   const btnSkipManual = document.getElementById('btnSkipManual');
   const autoSkipToggle = document.getElementById('autoSkipToggle');
+  const btnPlayPause = document.getElementById('btnPlayPause');
+  const playPauseIcon = document.getElementById('playPauseIcon');
+  const playPauseText = document.getElementById('playPauseText');
   const connStatus = document.getElementById('connStatus');
   const btnSync = document.getElementById('btnSync');
   const btnSyncText = document.getElementById('btnSyncText');
+  const btnOpenSettings = document.getElementById('btnOpenSettings');
+
+  // Stats Elements
+  const statTotalDetections = document.getElementById('statTotalDetections');
+  const statAutoSkips = document.getElementById('statAutoSkips');
+  const statManualSkips = document.getElementById('statManualSkips');
+  const statTopPerson = document.getElementById('statTopPerson');
 
   // Alert Box Elements
   const matchAlertBox = document.getElementById('matchAlertBox');
@@ -22,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const alertMatchTopics = document.getElementById('alertMatchTopics');
   const alertMatchCategory = document.getElementById('alertMatchCategory');
   const btnAlertSkip = document.getElementById('btnAlertSkip');
+  const btnAlertSnooze = document.getElementById('btnAlertSnooze');
   const btnAlertKeep = document.getElementById('btnAlertKeep');
   const btnAlertAddAlias = document.getElementById('btnAlertAddAlias');
   const btnAlertAddExclude = document.getElementById('btnAlertAddExclude');
@@ -33,6 +44,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnModalClose = document.getElementById('btnModalClose');
   const btnModalCancel = document.getElementById('btnModalCancel');
   const btnModalSave = document.getElementById('btnModalSave');
+
+  // Settings Modal Elements
+  const settingsModal = document.getElementById('settingsModal');
+  const settingsForm = document.getElementById('settingsForm');
+  const btnSettingsClose = document.getElementById('btnSettingsClose');
+  const btnSettingsCancel = document.getElementById('btnSettingsCancel');
+  const cfgAutoSkip = document.getElementById('cfgAutoSkip');
+  const cfgEnableDialog = document.getElementById('cfgEnableDialog');
+  const cfgFuzzyMatching = document.getElementById('cfgFuzzyMatching');
+  const cfgFuzzyThreshold = document.getElementById('cfgFuzzyThreshold');
+  const fuzzyThresholdVal = document.getElementById('fuzzyThresholdVal');
+  const cfgPollInterval = document.getElementById('cfgPollInterval');
+  const cfgCategory = document.getElementById('cfgCategory');
+  const cfgWebPassword = document.getElementById('cfgWebPassword');
+  const cfgWebPort = document.getElementById('cfgWebPort');
+  const cfgApiUrl = document.getElementById('cfgApiUrl');
+
+  // Rules I/O Elements
+  const btnExportRules = document.getElementById('btnExportRules');
+  const btnImportRules = document.getElementById('btnImportRules');
+  const rulesFileInput = document.getElementById('rulesFileInput');
 
   let currentModalTarget = '';
   let lastActiveMatch = null;
@@ -225,19 +257,53 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSkipManual.addEventListener('click', triggerSkip);
     btnAlertSkip.addEventListener('click', triggerSkip);
 
+    if (btnPlayPause) {
+      btnPlayPause.addEventListener('click', async () => {
+        try {
+          await fetch('/api/player/play-pause', { method: 'POST' });
+        } catch (err) {
+          console.error('Play/Pause error:', err);
+        }
+      });
+    }
+
     btnAlertKeep.addEventListener('click', () => {
       matchAlertBox.style.display = 'none';
     });
+
+    if (btnAlertSnooze) {
+      btnAlertSnooze.addEventListener('click', async () => {
+        if (!lastActiveMatch || !lastActiveMatch.person) return;
+        const name = lastActiveMatch.person.display_name;
+        try {
+          const res = await fetch('/api/snooze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ person: name, duration_minutes: 60 })
+          });
+          const data = await res.json();
+          if (data.success) {
+            matchAlertBox.style.display = 'none';
+            showToast(`⏳ '${name}' 1 saatliğine muaf tutuldu.`);
+          }
+        } catch (err) {
+          console.error('Snooze error:', err);
+        }
+      });
+    }
 
     // Auto-Skip Toggle
     autoSkipToggle.addEventListener('change', async (e) => {
       autoSkipEnabled = e.target.checked;
       try {
-        await fetch('/api/settings', {
+        const res = await fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ auto_skip: autoSkipEnabled })
         });
+        if (res.ok) {
+          showToast(autoSkipEnabled ? '⚡ Otomatik Geçiş [AÇIK] ve config.json güncellendi' : '🔔 Otomatik Geçiş [KAPALI] ve config.json güncellendi');
+        }
       } catch (err) {
         console.error('Settings update error:', err);
       }
@@ -312,6 +378,121 @@ document.addEventListener('DOMContentLoaded', () => {
           saveModalAlias();
         } else if (e.key === 'Escape') {
           closeAliasModal();
+        }
+      });
+    }
+
+    // Rules I/O Events (Export / Import)
+    if (btnExportRules) {
+      btnExportRules.addEventListener('click', () => {
+        window.open('/api/rules/export', '_blank');
+      });
+    }
+
+    if (btnImportRules && rulesFileInput) {
+      btnImportRules.addEventListener('click', () => rulesFileInput.click());
+      rulesFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+          try {
+            const jsonContent = JSON.parse(evt.target.result);
+            const res = await fetch('/api/rules/import', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(jsonContent)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              showToast('✅ Kurallar başarıyla içe aktarıldı!');
+              loadRules();
+              loadPersons();
+            } else {
+              alert('Yükleme hatası: ' + (data.error || 'Bilinmeyen hata'));
+            }
+          } catch (err) {
+            alert('JSON dosyası okunamadı: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+        rulesFileInput.value = '';
+      });
+    }
+
+    // Settings Modal Handlers
+    function openSettingsModal() {
+      fetch('/api/config')
+        .then(res => res.json())
+        .then(cfg => {
+          if (!cfg) return;
+          if (cfgAutoSkip) cfgAutoSkip.checked = !!cfg.auto_skip;
+          if (cfgEnableDialog) cfgEnableDialog.checked = !!cfg.enable_dialog;
+          if (cfgFuzzyMatching) cfgFuzzyMatching.checked = cfg.fuzzy_matching !== false;
+          const th = cfg.fuzzy_threshold ? Math.round(cfg.fuzzy_threshold * 100) : 85;
+          if (cfgFuzzyThreshold) cfgFuzzyThreshold.value = th;
+          if (fuzzyThresholdVal) fuzzyThresholdVal.textContent = `%${th}`;
+          if (cfgPollInterval) cfgPollInterval.value = cfg.poll_interval_ms || 1500;
+          if (cfgCategory) cfgCategory.value = cfg.category || 'HEPSİ';
+          if (cfgWebPassword) cfgWebPassword.value = cfg.web_password || '';
+          if (cfgWebPort) cfgWebPort.value = cfg.web_port || 8080;
+          if (cfgApiUrl) cfgApiUrl.value = cfg.api_url || '';
+
+          if (settingsModal) settingsModal.style.display = 'flex';
+        })
+        .catch(err => console.error('Config fetch failed:', err));
+    }
+
+    function closeSettingsModal() {
+      if (settingsModal) settingsModal.style.display = 'none';
+    }
+
+    if (btnOpenSettings) btnOpenSettings.addEventListener('click', openSettingsModal);
+    if (btnSettingsClose) btnSettingsClose.addEventListener('click', closeSettingsModal);
+    if (btnSettingsCancel) btnSettingsCancel.addEventListener('click', closeSettingsModal);
+    if (settingsModal) {
+      settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) closeSettingsModal();
+      });
+    }
+    if (cfgFuzzyThreshold && fuzzyThresholdVal) {
+      cfgFuzzyThreshold.addEventListener('input', () => {
+        fuzzyThresholdVal.textContent = `%${cfgFuzzyThreshold.value}`;
+      });
+    }
+    if (settingsForm) {
+      settingsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+          auto_skip: cfgAutoSkip ? cfgAutoSkip.checked : false,
+          enable_dialog: cfgEnableDialog ? cfgEnableDialog.checked : true,
+          fuzzy_matching: cfgFuzzyMatching ? cfgFuzzyMatching.checked : true,
+          fuzzy_threshold: cfgFuzzyThreshold ? (parseFloat(cfgFuzzyThreshold.value) / 100) : 0.85,
+          poll_interval_ms: cfgPollInterval ? parseInt(cfgPollInterval.value) : 1500,
+          category: cfgCategory ? cfgCategory.value : 'HEPSİ',
+          web_password: cfgWebPassword ? cfgWebPassword.value : 'admin',
+          web_port: cfgWebPort ? parseInt(cfgWebPort.value) : 8080,
+          api_url: cfgApiUrl ? cfgApiUrl.value.trim() : '',
+          bind_address: '127.0.0.1'
+        };
+
+        try {
+          const res = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            closeSettingsModal();
+            showToast('💾 Ayarlar başarıyla config.json dosyasına kaydedildi!');
+            autoSkipToggle.checked = payload.auto_skip;
+            autoSkipEnabled = payload.auto_skip;
+          } else {
+            alert('Ayar kaydetme hatası: ' + (data.error || 'Bilinmeyen hata'));
+          }
+        } catch (err) {
+          alert('Bağlantı hatası: ' + err.message);
         }
       });
     }
@@ -395,18 +576,51 @@ document.addEventListener('DOMContentLoaded', () => {
         playerSourceBadge.textContent = `${media.app || 'MEDYA'} (${media.state.toUpperCase()})`;
         playerSourceBadge.className = 'badge ' + (media.state === 'playing' ? 'playing' : '');
         btnSkipManual.disabled = false;
+
+        if (btnPlayPause) {
+          btnPlayPause.disabled = false;
+          if (media.state === 'playing') {
+            if (playPauseIcon) playPauseIcon.textContent = '⏸️';
+            if (playPauseText) playPauseText.textContent = 'Duraklat';
+          } else {
+            if (playPauseIcon) playPauseIcon.textContent = '▶️';
+            if (playPauseText) playPauseText.textContent = 'Oynat';
+          }
+        }
       } else {
         trackTitle.textContent = 'Medya Algılanmadı';
-        trackArtist.textContent = 'Spotify, Apple Music veya YouTube açın';
+        trackArtist.textContent = 'Spotify, Apple Music, YouTube veya Tarayıcı açın';
         trackAlbum.textContent = '';
         playerSourceBadge.textContent = 'DURDURULDU';
         playerSourceBadge.className = 'badge';
         btnSkipManual.disabled = true;
+        if (btnPlayPause) btnPlayPause.disabled = true;
       }
 
       // Update Auto-skip toggle sync
       if (autoSkipToggle.checked !== state.auto_skip) {
         autoSkipToggle.checked = state.auto_skip;
+      }
+
+      // Render Analytics Stats
+      if (state.stats) {
+        if (statTotalDetections) statTotalDetections.textContent = state.stats.total_detections || 0;
+        if (statAutoSkips) statAutoSkips.textContent = state.stats.total_auto_skips || 0;
+        if (statManualSkips) statManualSkips.textContent = state.stats.total_manual_skips || 0;
+        if (statTopPerson) {
+          let topName = '-';
+          let maxCount = 0;
+          if (state.stats.top_persons) {
+            for (const [name, count] of Object.entries(state.stats.top_persons)) {
+              if (count > maxCount) {
+                maxCount = count;
+                topName = `${name} (${count})`;
+              }
+            }
+          }
+          statTopPerson.textContent = topName;
+          statTopPerson.title = topName;
+        }
       }
 
       // Match Alert Box

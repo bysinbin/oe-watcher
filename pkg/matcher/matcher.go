@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -36,12 +37,26 @@ type Matcher struct {
 	AllowedCategories []string
 	AllowedTopics     []string
 	rulesMgr          *rules.Manager
+	fuzzyEnabled      bool
+	fuzzyThreshold    float64
 }
 
 func NewMatcher(persons []models.Person) *Matcher {
-	m := &Matcher{}
+	m := &Matcher{
+		fuzzyEnabled:   true,
+		fuzzyThreshold: 0.85,
+	}
 	m.SetPersons(persons)
 	return m
+}
+
+func (m *Matcher) SetFuzzy(enabled bool, threshold float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.fuzzyEnabled = enabled
+	if threshold > 0 && threshold <= 1.0 {
+		m.fuzzyThreshold = threshold
+	}
 }
 
 func (m *Matcher) SetRulesManager(rm *rules.Manager) {
@@ -248,7 +263,114 @@ func (m *Matcher) Match(track models.MediaInfo) *models.MatchResult {
 		}
 	}
 
+	// 4. Fuzzy Matching Pass (if enabled and no exact match found)
+	if m.fuzzyEnabled && m.fuzzyThreshold > 0.5 {
+		titleWords := strings.Fields(titleFolded)
+
+		for _, item := range m.indexedPersons {
+			if !m.isCategoryAllowed(item.Person.Tags) || !m.isTopicAllowed(item.Person.Topics) {
+				continue
+			}
+
+			for _, cand := range item.Candidates {
+				candFolded := cand.DiacriticFold
+				if len(candFolded) < 4 {
+					continue
+				}
+
+				// Check similarity against artist parts
+				for _, part := range artistPartsFolded {
+					if len(part) >= 4 {
+						sim := Similarity(part, candFolded)
+						if sim >= m.fuzzyThreshold {
+							label := fmt.Sprintf("%s (Bulanık: %%%.0f)", cand.Original, sim*100)
+							return m.buildResult(item.Person, label, track)
+						}
+					}
+				}
+
+				// Check similarity against artist full string
+				if len(artistFolded) >= 4 {
+					sim := Similarity(artistFolded, candFolded)
+					if sim >= m.fuzzyThreshold {
+						label := fmt.Sprintf("%s (Bulanık: %%%.0f)", cand.Original, sim*100)
+						return m.buildResult(item.Person, label, track)
+					}
+				}
+
+				// Check similarity against words or word-windows in title
+				candTokenCount := len(cand.TokensFolded)
+				if candTokenCount > 0 && len(titleWords) >= candTokenCount {
+					for i := 0; i <= len(titleWords)-candTokenCount; i++ {
+						window := strings.Join(titleWords[i:i+candTokenCount], " ")
+						if len(window) >= 4 {
+							sim := Similarity(window, candFolded)
+							if sim >= m.fuzzyThreshold {
+								label := fmt.Sprintf("%s (Bulanık: %%%.0f)", cand.Original, sim*100)
+								return m.buildResult(item.Person, label, track)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return nil
+}
+
+// Levenshtein calculates minimum edit distance between two rune slices.
+func Levenshtein(a, b []rune) int {
+	la := len(a)
+	lb := len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+
+	dp := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		dp[j] = j
+	}
+
+	for i := 1; i <= la; i++ {
+		prev := dp[0]
+		dp[0] = i
+		for j := 1; j <= lb; j++ {
+			temp := dp[j]
+			cost := 0
+			if a[i-1] != b[j-1] {
+				cost = 1
+			}
+			val := dp[j] + 1
+			if dp[j-1]+1 < val {
+				val = dp[j-1] + 1
+			}
+			if prev+cost < val {
+				val = prev + cost
+			}
+			dp[j] = val
+			prev = temp
+		}
+	}
+	return dp[lb]
+}
+
+// Similarity returns a score between 0.0 and 1.0.
+func Similarity(s1, s2 string) float64 {
+	r1 := []rune(s1)
+	r2 := []rune(s2)
+	maxLen := len(r1)
+	if len(r2) > maxLen {
+		maxLen = len(r2)
+	}
+	if maxLen == 0 {
+		return 1.0
+	}
+	dist := Levenshtein(r1, r2)
+	return 1.0 - float64(dist)/float64(maxLen)
 }
 
 func containsWord(haystack, needle string) bool {

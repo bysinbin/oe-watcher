@@ -13,14 +13,16 @@ const (
 )
 
 type Config struct {
-	ApiURL         string `json:"api_url"`
-	WebPort        int    `json:"web_port"`
-	BindAddress    string `json:"bind_address"`
-	WebPassword    string `json:"web_password"`
-	AutoSkip       bool   `json:"auto_skip"`
-	EnableDialog   bool   `json:"enable_dialog"`
-	PollIntervalMs int    `json:"poll_interval_ms"`
-	Category       string `json:"category"`
+	ApiURL         string  `json:"api_url"`
+	WebPort        int     `json:"web_port"`
+	BindAddress    string  `json:"bind_address"`
+	WebPassword    string  `json:"web_password"`
+	AutoSkip       bool    `json:"auto_skip"`
+	EnableDialog   bool    `json:"enable_dialog"`
+	PollIntervalMs int     `json:"poll_interval_ms"`
+	Category       string  `json:"category"`
+	FuzzyMatching  bool    `json:"fuzzy_matching"`
+	FuzzyThreshold float64 `json:"fuzzy_threshold"`
 }
 
 func DefaultConfig() *Config {
@@ -33,6 +35,8 @@ func DefaultConfig() *Config {
 		EnableDialog:   true,
 		PollIntervalMs: 1500,
 		Category:       "HEPSİ",
+		FuzzyMatching:  true,
+		FuzzyThreshold: 0.85,
 	}
 }
 
@@ -73,6 +77,13 @@ func LoadOrCreate(customPath string) (*Config, string, error) {
 				if cfg.Category == "" {
 					cfg.Category = "HEPSİ"
 				}
+				if cfg.FuzzyThreshold <= 0 || cfg.FuzzyThreshold > 1.0 {
+					cfg.FuzzyThreshold = 0.85
+				}
+				absPath, err := filepath.Abs(path)
+				if err == nil {
+					return cfg, absPath, nil
+				}
 				return cfg, path, nil
 			}
 		}
@@ -80,6 +91,10 @@ func LoadOrCreate(customPath string) (*Config, string, error) {
 
 	// Create new config file at targetPath
 	cfg := DefaultConfig()
+	absTarget, err := filepath.Abs(targetPath)
+	if err == nil {
+		targetPath = absTarget
+	}
 	if err := Save(targetPath, cfg); err != nil {
 		return cfg, targetPath, fmt.Errorf("config oluşturulamadı: %w", err)
 	}

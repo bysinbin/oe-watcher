@@ -17,6 +17,13 @@ import (
 	"medya-filter/pkg/tray"
 )
 
+type AppStats struct {
+	TotalDetections  int            `json:"total_detections"`
+	TotalAutoSkips   int            `json:"total_auto_skips"`
+	TotalManualSkips int            `json:"total_manual_skips"`
+	TopPersons       map[string]int `json:"top_persons"`
+}
+
 type App struct {
 	mu                  sync.RWMutex
 	cfg                 *config.Config
@@ -35,6 +42,8 @@ type App struct {
 	activeTopics        []string
 	syncStatus          string
 	lastSyncTime        time.Time
+	snoozedPersons      map[string]time.Time
+	stats               AppStats
 }
 
 func NewAppWithConfig(cfg *config.Config, configPath, dataDir string) *App {
@@ -52,6 +61,7 @@ func NewAppWithConfig(cfg *config.Config, configPath, dataDir string) *App {
 	rulesMgr := rules.NewManager(dataDir)
 	m := matcher.NewMatcher(nil)
 	m.SetRulesManager(rulesMgr)
+	m.SetFuzzy(cfg.FuzzyMatching, cfg.FuzzyThreshold)
 
 	cats := []string{"HEPSİ"}
 	if cfg.Category != "" && cfg.Category != "HEPSİ" {
@@ -71,6 +81,10 @@ func NewAppWithConfig(cfg *config.Config, configPath, dataDir string) *App {
 		activeCategories: cats,
 		activeTopics:     []string{"TÜM KONULAR"},
 		syncStatus:       "Başlatılıyor...",
+		snoozedPersons:   make(map[string]time.Time),
+		stats: AppStats{
+			TopPersons: make(map[string]int),
+		},
 	}
 }
 
@@ -139,9 +153,11 @@ func (a *App) pollOnce() {
 	for _, track := range mediaList {
 		match := a.matcher.Match(track)
 		if match != nil {
-			matchedResult = match
-			matchedTrack = track
-			break
+			if !a.IsSnoozed(match.Person.DisplayName) {
+				matchedResult = match
+				matchedTrack = track
+				break
+			}
 		}
 	}
 
@@ -180,6 +196,14 @@ func (a *App) pollOnce() {
 }
 
 func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaInfo, autoSkip, showDialog bool) {
+	a.mu.Lock()
+	a.stats.TotalDetections++
+	if a.stats.TopPersons == nil {
+		a.stats.TopPersons = make(map[string]int)
+	}
+	a.stats.TopPersons[match.Person.DisplayName]++
+	a.mu.Unlock()
+
 	// 1. Terminal alert output
 	topicsStr := strings.Join(match.Topics, ", ")
 	if topicsStr == "" {
@@ -208,6 +232,9 @@ func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaI
 
 	// 3. Skip handling
 	if autoSkip {
+		a.mu.Lock()
+		a.stats.TotalAutoSkips++
+		a.mu.Unlock()
 		fmt.Println("\033[1;32m⏩ Otomatik Geçiş devrede: Şarkı geçiliyor...\033[0m")
 		if err := media.SkipTrack(track); err != nil {
 			fmt.Printf("\033[1;31m❌ Şarkı geçilemedi: %v\033[0m\n", err)
@@ -275,10 +302,64 @@ func (a *App) SkipCurrent() error {
 	a.mu.RUnlock()
 
 	err := media.SkipTrack(cur)
-	if err == nil && match != nil {
-		a.recordHistory(cur, match.Person, "manual_skip")
+	if err == nil {
+		a.mu.Lock()
+		a.stats.TotalManualSkips++
+		a.mu.Unlock()
+		if match != nil {
+			a.recordHistory(cur, match.Person, "manual_skip")
+		}
 	}
 	return err
+}
+
+// PlayPauseCurrent toggles playback of current media.
+func (a *App) PlayPauseCurrent() error {
+	a.mu.RLock()
+	cur := a.currentMedia
+	a.mu.RUnlock()
+	return media.PlayPauseTrack(cur)
+}
+
+// SnoozePerson temporarily ignores a person for a given duration.
+func (a *App) SnoozePerson(displayName string, duration time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.snoozedPersons == nil {
+		a.snoozedPersons = make(map[string]time.Time)
+	}
+	clean := strings.ToLower(strings.TrimSpace(displayName))
+	a.snoozedPersons[clean] = time.Now().Add(duration)
+	fmt.Printf("⏳ [Snooze] '%s' kişisi %v süresince muaf tutuldu.\n", displayName, duration)
+}
+
+// IsSnoozed checks if a person is currently snoozed.
+func (a *App) IsSnoozed(displayName string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.snoozedPersons == nil {
+		return false
+	}
+	clean := strings.ToLower(strings.TrimSpace(displayName))
+	expiry, exists := a.snoozedPersons[clean]
+	if !exists {
+		return false
+	}
+	return time.Now().Before(expiry)
+}
+
+// GetSnoozedList returns currently active snoozed names.
+func (a *App) GetSnoozedList() []string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	var list []string
+	now := time.Now()
+	for name, expiry := range a.snoozedPersons {
+		if now.Before(expiry) {
+			list = append(list, name)
+		}
+	}
+	return list
 }
 
 // GetState returns snapshot of current application status.
@@ -294,6 +375,9 @@ type AppState struct {
 	History          []models.HistoryItem `json:"history"`
 	LastSync         string               `json:"last_sync"`
 	Rules            rules.RulesSnapshot  `json:"rules"`
+	Config           *config.Config       `json:"config"`
+	Stats            AppStats             `json:"stats"`
+	SnoozedList      []string             `json:"snoozed_list"`
 }
 
 func (a *App) GetState() AppState {
@@ -303,6 +387,14 @@ func (a *App) GetState() AppState {
 	lastSyncStr := ""
 	if !a.lastSyncTime.IsZero() {
 		lastSyncStr = a.lastSyncTime.Format("02.01.2006 15:04:05")
+	}
+
+	var snoozed []string
+	now := time.Now()
+	for name, expiry := range a.snoozedPersons {
+		if now.Before(expiry) {
+			snoozed = append(snoozed, name)
+		}
 	}
 
 	return AppState{
@@ -317,6 +409,9 @@ func (a *App) GetState() AppState {
 		History:          a.history,
 		LastSync:         lastSyncStr,
 		Rules:            a.rulesMgr.GetSnapshot(),
+		Config:           a.cfg,
+		Stats:            a.stats,
+		SnoozedList:      snoozed,
 	}
 }
 
@@ -327,19 +422,85 @@ func (a *App) GetConfig() *config.Config {
 	return a.cfg
 }
 
+func (a *App) saveConfigLocked() {
+	if a.cfg != nil && a.configPath != "" {
+		if err := config.Save(a.configPath, a.cfg); err != nil {
+			fmt.Printf("⚠️ config.json kaydedilemedi (%s): %v\n", a.configPath, err)
+		} else {
+			fmt.Printf("💾 [Config] Ayarlar başarıyla kaydedildi: %s (AutoSkip: %v, Dialog: %v, Kategori: %s, Fuzzy: %v)\n",
+				a.configPath, a.cfg.AutoSkip, a.cfg.EnableDialog, a.cfg.Category, a.cfg.FuzzyMatching)
+		}
+	}
+}
+
+// UpdateConfig updates entire configuration and persists to config.json.
+func (a *App) UpdateConfig(newCfg *config.Config) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if newCfg == nil {
+		return fmt.Errorf("boş config")
+	}
+
+	a.cfg = newCfg
+	a.autoSkip = newCfg.AutoSkip
+	a.enableDialog = newCfg.EnableDialog
+	if newCfg.PollIntervalMs > 0 {
+		a.pollInterval = time.Duration(newCfg.PollIntervalMs) * time.Millisecond
+	}
+	if newCfg.Category != "" {
+		if newCfg.Category == "HEPSİ" {
+			a.activeCategories = []string{"HEPSİ"}
+		} else {
+			a.activeCategories = []string{newCfg.Category}
+		}
+		a.matcher.SetFilters(a.activeCategories, a.activeTopics)
+	}
+	a.matcher.SetFuzzy(newCfg.FuzzyMatching, newCfg.FuzzyThreshold)
+	tray.SetAutoSkipState(newCfg.AutoSkip)
+
+	a.saveConfigLocked()
+	return nil
+}
+
 // SetAutoSkip updates auto-skip preference and persists to config.
 func (a *App) SetAutoSkip(val bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.autoSkip = val
 	tray.SetAutoSkipState(val)
-	if a.cfg != nil && a.configPath != "" {
+	if a.cfg != nil {
 		a.cfg.AutoSkip = val
-		_ = config.Save(a.configPath, a.cfg)
+		a.saveConfigLocked()
 	}
 }
 
-// SetFilters updates allowed categories and topics.
+// SetEnableDialog updates dialog preference and persists to config.
+func (a *App) SetEnableDialog(val bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.enableDialog = val
+	if a.cfg != nil {
+		a.cfg.EnableDialog = val
+		a.saveConfigLocked()
+	}
+}
+
+// SetFuzzy updates fuzzy matching preference and persists to config.
+func (a *App) SetFuzzy(enabled bool, threshold float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.matcher.SetFuzzy(enabled, threshold)
+	if a.cfg != nil {
+		a.cfg.FuzzyMatching = enabled
+		if threshold > 0 && threshold <= 1.0 {
+			a.cfg.FuzzyThreshold = threshold
+		}
+		a.saveConfigLocked()
+	}
+}
+
+// SetFilters updates allowed categories and topics and persists default category.
 func (a *App) SetFilters(categories, topics []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -347,6 +508,25 @@ func (a *App) SetFilters(categories, topics []string) {
 	a.activeCategories = categories
 	a.activeTopics = topics
 	a.matcher.SetFilters(categories, topics)
+
+	if len(categories) > 0 && a.cfg != nil {
+		a.cfg.Category = categories[0]
+		a.saveConfigLocked()
+	}
+}
+
+// ExportRules exports rules as formatted JSON.
+func (a *App) ExportRules() ([]byte, error) {
+	return a.rulesMgr.Export()
+}
+
+// ImportRules imports rules from JSON and rebuilds index.
+func (a *App) ImportRules(data []byte) error {
+	err := a.rulesMgr.Import(data)
+	if err == nil {
+		a.matcher.RebuildIndex()
+	}
+	return err
 }
 
 // GetAllPersons returns all indexed persons.

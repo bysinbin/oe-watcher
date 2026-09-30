@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"medya-filter/pkg/app"
+	"medya-filter/pkg/config"
 	"medya-filter/pkg/models"
 )
 
@@ -65,9 +66,14 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/status", s.authMiddleware(s.handleStatus))
 	mux.HandleFunc("/api/skip", s.authMiddleware(s.handleSkip))
 	mux.HandleFunc("/api/settings", s.authMiddleware(s.handleSettings))
+	mux.HandleFunc("/api/config", s.authMiddleware(s.handleConfig))
+	mux.HandleFunc("/api/snooze", s.authMiddleware(s.handleSnooze))
+	mux.HandleFunc("/api/player/play-pause", s.authMiddleware(s.handlePlayPause))
 	mux.HandleFunc("/api/sync", s.authMiddleware(s.handleSync))
 	mux.HandleFunc("/api/persons", s.authMiddleware(s.handlePersons))
 	mux.HandleFunc("/api/rules", s.authMiddleware(s.handleRules))
+	mux.HandleFunc("/api/rules/export", s.authMiddleware(s.handleRulesExport))
+	mux.HandleFunc("/api/rules/import", s.authMiddleware(s.handleRulesImport))
 	mux.HandleFunc("/api/rules/person", s.authMiddleware(s.handleRulePerson))
 	mux.HandleFunc("/api/rules/alias", s.authMiddleware(s.handleRuleAlias))
 	mux.HandleFunc("/api/rules/exclude", s.authMiddleware(s.handleRuleExclude))
@@ -236,8 +242,10 @@ func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
 }
 
 type SettingsRequest struct {
-	AutoSkip         *bool     `json:"auto_skip,omitempty"`
-	EnableDialog     *bool     `json:"enable_dialog,omitempty"`
+	AutoSkip         *bool    `json:"auto_skip,omitempty"`
+	EnableDialog     *bool    `json:"enable_dialog,omitempty"`
+	FuzzyMatching    *bool    `json:"fuzzy_matching,omitempty"`
+	FuzzyThreshold   *float64 `json:"fuzzy_threshold,omitempty"`
 	ActiveCategories []string `json:"active_categories,omitempty"`
 	ActiveTopics     []string `json:"active_topics,omitempty"`
 }
@@ -257,6 +265,24 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if req.AutoSkip != nil {
 		s.app.SetAutoSkip(*req.AutoSkip)
 	}
+	if req.EnableDialog != nil {
+		s.app.SetEnableDialog(*req.EnableDialog)
+	}
+	if req.FuzzyMatching != nil {
+		th := 0.85
+		if req.FuzzyThreshold != nil {
+			th = *req.FuzzyThreshold
+		} else if cfg := s.app.GetConfig(); cfg != nil {
+			th = cfg.FuzzyThreshold
+		}
+		s.app.SetFuzzy(*req.FuzzyMatching, th)
+	} else if req.FuzzyThreshold != nil {
+		fm := true
+		if cfg := s.app.GetConfig(); cfg != nil {
+			fm = cfg.FuzzyMatching
+		}
+		s.app.SetFuzzy(fm, *req.FuzzyThreshold)
+	}
 
 	state := s.app.GetState()
 	cats := state.ActiveCategories
@@ -271,6 +297,125 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(s.app.GetState())
+}
+
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		_ = json.NewEncoder(w).Encode(s.app.GetConfig())
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var newCfg config.Config
+		if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if err := s.app.UpdateConfig(&newCfg); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		// Update in-memory server password if changed
+		s.password = newCfg.WebPassword
+
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"config":  s.app.GetConfig(),
+		})
+		return
+	}
+
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+type SnoozeRequest struct {
+	Person          string `json:"person"`
+	DurationMinutes int    `json:"duration_minutes"`
+}
+
+func (s *Server) handleSnooze(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SnoozeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	mins := req.DurationMinutes
+	if mins <= 0 {
+		mins = 60
+	}
+
+	s.app.SnoozePerson(req.Person, time.Duration(mins)*time.Minute)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"person":  req.Person,
+		"expires": time.Now().Add(time.Duration(mins) * time.Minute).Format("15:04:05"),
+	})
+}
+
+func (s *Server) handlePlayPause(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	err := s.app.PlayPauseCurrent()
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) handleRulesExport(w http.ResponseWriter, r *http.Request) {
+	data, err := s.app.ExportRules()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"oe_custom_rules.json\"")
+	_, _ = w.Write(data)
+}
+
+func (s *Server) handleRulesImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var raw json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, "Geçersiz JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.app.ImportRules(raw); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"rules":   s.app.GetRulesManager().GetSnapshot(),
+	})
 }
 
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {

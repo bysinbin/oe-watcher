@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -98,5 +99,41 @@ func TestServerAuthentication(t *testing.T) {
 	respAuth.Body.Close()
 	if respAuth.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200 for authenticated request, got %d", respAuth.StatusCode)
+	}
+
+	// 6. Test Settings Auto-Skip toggle and verify config persistence
+	configFile := filepath.Join(tempDir, "config.json")
+	_ = config.Save(configFile, cfg)
+	appWithFile := app.NewAppWithConfig(cfg, configFile, tempDir)
+	appWithFile.SetAutoSkip(true)
+
+	savedCfg, _, err := config.LoadOrCreate(configFile)
+	if err != nil {
+		t.Fatalf("Failed to reload saved config: %v", err)
+	}
+	if !savedCfg.AutoSkip {
+		t.Errorf("Expected AutoSkip=true to be saved in config file, got false")
+	}
+
+	// 7. Test Snooze functionality
+	appWithFile.SnoozePerson("Test Artist", 1*time.Hour)
+	if !appWithFile.IsSnoozed("Test Artist") {
+		t.Errorf("Expected 'Test Artist' to be snoozed")
+	}
+	if appWithFile.IsSnoozed("Another Artist") {
+		t.Errorf("Expected 'Another Artist' not to be snoozed")
+	}
+
+	// 8. Test Export and Import Rules
+	exportBytes, err := appWithFile.ExportRules()
+	if err != nil {
+		t.Fatalf("ExportRules failed: %v", err)
+	}
+	if len(exportBytes) == 0 {
+		t.Fatalf("Expected non-empty export bytes")
+	}
+	err = appWithFile.ImportRules(exportBytes)
+	if err != nil {
+		t.Fatalf("ImportRules failed: %v", err)
 	}
 }

@@ -145,6 +145,100 @@ function run() {
 		}
 	} catch(e) {}
 
+	// 5. Check Brave Browser
+	try {
+		if (Application("Brave Browser").running()) {
+			let brave = Application("Brave Browser");
+			for (let win of brave.windows()) {
+				for (let tab of win.tabs()) {
+					let url = tab.url() || "";
+					let rawTitle = tab.title() || "";
+					let isMusicSite = url.includes("music.youtube.com") || url.includes("open.spotify.com") || url.includes("soundcloud.com") || url.includes("deezer.com");
+					let isVideoSite = url.includes("youtube.com/watch");
+
+					if (isMusicSite || isVideoSite) {
+						let cleanTitle = rawTitle
+							.replace(/\s*\|\s*YouTube Music$/i, "")
+							.replace(/\s*-\s*YouTube Music$/i, "")
+							.replace(/\s*-\s*YouTube$/i, "")
+							.replace(/\s*\|\s*YouTube$/i, "")
+							.replace(/\s*-\s*Spotify$/i, "")
+							.replace(/\s*\|\s*SoundCloud$/i, "")
+							.trim();
+
+						let low = cleanTitle.toLowerCase();
+						if (cleanTitle === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
+							continue;
+						}
+
+						let artist = "";
+						if (cleanTitle.includes(" - ")) {
+							let parts = cleanTitle.split(" - ");
+							artist = parts[0].trim();
+						}
+
+						list.push({
+							app: isMusicSite ? "Brave (Music)" : "Brave",
+							artist: artist,
+							title: cleanTitle,
+							album: "",
+							state: "playing",
+							url: url,
+							priority: isMusicSite ? 1 : 2
+						});
+					}
+				}
+			}
+		}
+	} catch(e) {}
+
+	// 6. Check Arc Browser
+	try {
+		if (Application("Arc").running()) {
+			let arc = Application("Arc");
+			for (let win of arc.windows()) {
+				for (let tab of win.tabs()) {
+					let url = tab.url() || "";
+					let rawTitle = tab.title() || "";
+					let isMusicSite = url.includes("music.youtube.com") || url.includes("open.spotify.com") || url.includes("soundcloud.com") || url.includes("deezer.com");
+					let isVideoSite = url.includes("youtube.com/watch");
+
+					if (isMusicSite || isVideoSite) {
+						let cleanTitle = rawTitle
+							.replace(/\s*\|\s*YouTube Music$/i, "")
+							.replace(/\s*-\s*YouTube Music$/i, "")
+							.replace(/\s*-\s*YouTube$/i, "")
+							.replace(/\s*\|\s*YouTube$/i, "")
+							.replace(/\s*-\s*Spotify$/i, "")
+							.replace(/\s*\|\s*SoundCloud$/i, "")
+							.trim();
+
+						let low = cleanTitle.toLowerCase();
+						if (cleanTitle === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
+							continue;
+						}
+
+						let artist = "";
+						if (cleanTitle.includes(" - ")) {
+							let parts = cleanTitle.split(" - ");
+							artist = parts[0].trim();
+						}
+
+						list.push({
+							app: isMusicSite ? "Arc (Music)" : "Arc",
+							artist: artist,
+							title: cleanTitle,
+							album: "",
+							state: "playing",
+							url: url,
+							priority: isMusicSite ? 1 : 2
+						});
+					}
+				}
+			}
+		}
+	} catch(e) {}
+
 	// Sort by priority (0 = desktop apps, 1 = dedicated web music, 2 = generic videos)
 	list.sort((a, b) => a.priority - b.priority);
 
@@ -265,5 +359,18 @@ func PauseTrack(info models.MediaInfo) error {
 		`
 		return exec.Command("osascript", "-l", "JavaScript", "-e", script).Run()
 	}
+	return nil
+}
+
+// PlayPauseTrack toggles playback state on active media player.
+func PlayPauseTrack(info models.MediaInfo) error {
+	appLower := strings.ToLower(info.App)
+	if strings.Contains(appLower, "spotify") {
+		return exec.Command("osascript", "-l", "JavaScript", "-e", `Application("Spotify").playpause();`).Run()
+	}
+	if strings.Contains(appLower, "music") && !strings.Contains(appLower, "youtube") {
+		return exec.Command("osascript", "-l", "JavaScript", "-e", `Application("Music").playpause();`).Run()
+	}
+	SendHardwarePlayPause()
 	return nil
 }

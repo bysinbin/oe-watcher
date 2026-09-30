@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -43,7 +45,18 @@ func main() {
 	portFlag := flag.Int("port", 0, "Web kontrol paneli portu (config.json değerini ezer)")
 	syncFlag := flag.Bool("sync", false, "Başlangıçta API ile tam senkronizasyon yap")
 	testArtist := flag.String("test", "", "Bir sanatçı veya şarkı adını test et ve çık (örn: -test 'Ahmet Kaya')")
+	installService := flag.Bool("install-service", false, "Mac açılışında arka planda otomatik başlaması için LaunchAgent servisi kur")
+	uninstallService := flag.Bool("uninstall-service", false, "Mac açılışında otomatik başlatan LaunchAgent servisini kaldır")
 	flag.Parse()
+
+	if *installService {
+		handleInstallService()
+		return
+	}
+	if *uninstallService {
+		handleUninstallService()
+		return
+	}
 
 	fmt.Print(banner)
 
@@ -193,4 +206,71 @@ func runTest(app *app.App, query string) {
 	}
 
 	fmt.Println("❌ Eşleşen kişi bulunamadı.")
+}
+
+func handleInstallService() {
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("❌ Program dosya yolu bulunamadı: %v\n", err)
+		return
+	}
+	workDir := filepath.Dir(exePath)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("❌ Kullanıcı ev dizini bulunamadı: %v\n", err)
+		return
+	}
+
+	launchDir := filepath.Join(homeDir, "Library", "LaunchAgents")
+	_ = os.MkdirAll(launchDir, 0755)
+	plistPath := filepath.Join(launchDir, "com.bysinbin.oe-watcher.plist")
+
+	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bysinbin.oe-watcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>%s</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>%s/oe-watcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>%s/oe-watcher.err</string>
+</dict>
+</plist>`, exePath, workDir, workDir, workDir)
+
+	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
+		fmt.Printf("❌ Plist dosyası oluşturulamadı: %v\n", err)
+		return
+	}
+
+	_ = exec.Command("launchctl", "unload", plistPath).Run()
+	if err := exec.Command("launchctl", "load", plistPath).Run(); err != nil {
+		fmt.Printf("⚠️ Servis dosyası oluşturuldu fakat launchctl ile yüklenemedi: %v\n", err)
+	} else {
+		fmt.Println("✅ Başarılı! OE Watcher LaunchAgent servisi kuruldu.")
+		fmt.Println("💡 Bilgisayarınızı her açtığınızda uygulama arka planda menü çubuğunda sessizce başlayacak.")
+		fmt.Printf("📁 Servis dosyası: %s\n", plistPath)
+	}
+}
+
+func handleUninstallService() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("❌ Kullanıcı ev dizini bulunamadı: %v\n", err)
+		return
+	}
+	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.bysinbin.oe-watcher.plist")
+	_ = exec.Command("launchctl", "unload", plistPath).Run()
+	_ = os.Remove(plistPath)
+	fmt.Println("✅ OE Watcher otomatik başlatma servisi başarıyla kaldırıldı.")
 }
