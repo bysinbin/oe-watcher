@@ -1,0 +1,9 @@
+# Compiled binary
+medya-filter
+
+# Logs and temporary files
+*.log
+.DS_Store
+
+# Session tokens
+data/session.json

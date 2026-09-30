@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Medya Filtresi // OE Kontrol Paneli</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Header Navigation -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="brand-text">
+          <h1>MEDYA FİLTRESİ</h1>
+          <span class="brand-tag">OE LIST WATCHER // v1.0</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="live-indicator">
+          <span class="pulse-dot"></span>
+          <span id="connStatus">Canlı İzleniyor</span>
+        </div>
+        <button id="btnSync" class="btn btn-secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          <span id="btnSyncText">API Senkronize Et</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <!-- Left Column: Now Playing & Match Alert & Person Explorer -->
+      <section class="left-panel">
+        
+        <!-- Live Now Playing Card -->
+        <div class="card player-card" id="playerCard">
+          <div class="card-header">
+            <span class="section-label">ŞU AN ÇALAN MEDYA //</span>
+            <span class="badge" id="playerSourceBadge">BEKLENİYOR</span>
+          </div>
+
+          <div class="player-body">
+            <div class="track-cover-placeholder" id="trackCoverIcon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg>
+            </div>
+            <div class="track-details">
+              <h2 class="track-title" id="trackTitle">Medya Algılanmadı</h2>
+              <p class="track-artist" id="trackArtist">Spotify, Apple Music veya YouTube açın</p>
+              <span class="track-album" id="trackAlbum"></span>
+            </div>
+          </div>
+
+          <div class="player-controls">
+            <button id="btnSkipManual" class="btn btn-skip" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+              Şarkıyı Geç
+            </button>
+            <div class="switch-container">
+              <label class="switch">
+                <input type="checkbox" id="autoSkipToggle">
+                <span class="slider"></span>
+              </label>
+              <span class="switch-label">Otomatik Geçiş (Auto-Skip)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Matched Person Alert Box (Appears when active song matches blacklist) -->
+        <div class="alert-box" id="matchAlertBox" style="display: none;">
+          <div class="alert-header">
+            <div class="alert-title">
+              <span class="warning-icon">⚠️</span>
+              <strong>KARA LİSTE EŞLEŞMESİ BULUNDU!</strong>
+            </div>
+            <span class="alert-badge" id="alertMatchCategory">ŞARKICI</span>
+          </div>
+          <div class="alert-content">
+            <div class="alert-row">
+              <span class="label">İsim Soyisim:</span>
+              <span class="value" id="alertMatchName">-</span>
+            </div>
+            <div class="alert-row">
+              <span class="label">Kategori:</span>
+              <span class="value" id="alertMatchTags">-</span>
+            </div>
+            <div class="alert-row">
+              <span class="label">Konu(lar):</span>
+              <span class="value" id="alertMatchTopics">-</span>
+            </div>
+          </div>
+          <div class="alert-actions">
+            <button id="btnAlertSkip" class="btn btn-danger">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+              Şarkıyı Hemen Geç
+            </button>
+            <button id="btnAlertKeep" class="btn btn-secondary">Dinlemeye Devam Et</button>
+          </div>
+        </div>
+
+        <!-- Person Database Search & View -->
+        <div class="card database-card">
+          <div class="card-header">
+            <span class="section-label">TAKİP LİSTESİ VERİ TABANI //</span>
+            <span class="count-badge" id="personCountBadge">0 KİŞİ</span>
+          </div>
+
+          <div class="search-bar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="searchInput" placeholder="Sanatçı, kişi veya konu ara... (örn: Ahmet Kaya, Blok3, Ezhel)">
+          </div>
+
+          <div class="persons-list" id="personsList">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Detection History Log -->
+        <div class="card history-card">
+          <div class="card-header">
+            <span class="section-label">GEÇMİŞ RAPORU //</span>
+          </div>
+          <div class="history-list" id="historyList">
+            <div class="empty-state">Henüz bir tespit geçmişi yok.</div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Right Column: Filter Control Box (Exact Match to User's Screenshot) -->
+      <aside class="right-panel">
+        <div class="filter-panel">
+          <div class="filter-header">
+            <div class="filter-title">
+              <div class="filter-bars">
+                <span></span><span></span><span></span>
+              </div>
+              <h2>FİLTRELE</h2>
+            </div>
+          </div>
+
+          <!-- Section: Konu // -->
+          <div class="filter-group">
+            <div class="group-title">
+              <span>KONU</span>
+              <span class="slash">//</span>
+            </div>
+            <div class="button-grid topic-grid" id="topicsGrid">
+              <!-- Dynamically populated or exact match buttons -->
+              <button class="filter-btn active" data-topic="TÜM KONULAR">TÜM KONULAR</button>
+              <button class="filter-btn" data-topic="SIRRI SÜREYYA ÖNDER PAYLAŞIMI">SIRRI SÜREYYA ÖNDER PAYLAŞIMI</button>
+              <button class="filter-btn" data-topic="AHMET KAYA PAYLAŞIMI">AHMET KAYA PAYLAŞIMI</button>
+              <button class="filter-btn" data-topic="AMEDSPOR PAYLAŞIMI">AMEDSPOR PAYLAŞIMI</button>
+              <button class="filter-btn" data-topic="ERMENİ TEHCİRİ HAKKINDA">ERMENİ TEHCİRİ HAKKINDA</button>
+              <button class="filter-btn" data-topic="AKİL İNSANLAR HEYETİ ÜYESİ">AKİL İNSANLAR HEYETİ ÜYESİ</button>
+              <button class="filter-btn" data-topic="YILMAZ GÜNEY PAYLAŞIMI">YILMAZ GÜNEY PAYLAŞIMI</button>
+              <button class="filter-btn" data-topic="AHMET TÜRK İMZACISI">AHMET TÜRK İMZACISI</button>
+              <button class="filter-btn" data-topic="DEM PARTİ HK.">DEM PARTİ HK.</button>
+              <button class="filter-btn" data-topic="ŞEYH SAİT GÜZELLEMESİ">ŞEYH SAİT GÜZELLEMESİ</button>
+              <button class="filter-btn" data-topic="SAÇ ÖRME HAREKETİ HK.">SAÇ ÖRME HAREKETİ HK.</button>
+              <button class="filter-btn" data-topic="TUNCELİ İSYANI PAYLAŞIMI">TUNCELİ İSYANI PAYLAŞIMI</button>
+              <button class="filter-btn" data-topic="SSÖ'NÜN DAMADININ İŞLETMELERİ">SSÖ'NÜN DAMADININ İŞLETMELERİ</button>
+              <button class="filter-btn" data-topic="SELAHATTİN DEMİRTAŞ HK.">SELAHATTİN DEMİRTAŞ HK.</button>
+              <button class="filter-btn" data-topic="AMEDSPOR SPONSORU">AMEDSPOR SPONSORU</button>
+              <button class="filter-btn" data-topic="ÖCALAN HAKKINDA">ÖCALAN HAKKINDA</button>
+              <button class="filter-btn" data-topic="KÜRDİSTAN HK.">KÜRDİSTAN HK.</button>
+              <button class="filter-btn" data-topic="HENDEK OPERASYONLARI">HENDEK OPERASYONLARI</button>
+              <button class="filter-btn" data-topic="KKTC HAKKINDA">KKTC HAKKINDA</button>
+              <button class="filter-btn" data-topic="ÖRGÜTE PARA YOLLAMA İDDİASI">ÖRGÜTE PARA YOLLAMA İDDİASI</button>
+              <button class="filter-btn" data-topic="PKK HK.">PKK HK.</button>
+              <button class="filter-btn" data-topic="ROJAVA PAYLAŞIMI">ROJAVA PAYLAŞIMI</button>
+              <button class="filter-btn" data-topic="SİLAHLI SALDIRI İFADESİ">SİLAHLI SALDIRI İFADESİ</button>
+              <button class="filter-btn" data-topic="TSK'YA İFTİRA">TSK'YA İFTİRA</button>
+              <button class="filter-btn" data-topic="YDG-H HK.">YDG-H HK.</button>
+            </div>
+          </div>
+
+          <!-- Section: Kategori // -->
+          <div class="filter-group">
+            <div class="group-title">
+              <span>KATEGORİ</span>
+              <span class="slash">//</span>
+            </div>
+            <div class="button-grid category-grid" id="categoriesGrid">
+              <button class="filter-btn active" data-category="HEPSİ">HEPSİ</button>
+              <button class="filter-btn" data-category="OYUNCU">OYUNCU</button>
+              <button class="filter-btn" data-category="ŞARKICI">ŞARKICI</button>
+              <button class="filter-btn" data-category="YAZAR">YAZAR</button>
+              <button class="filter-btn" data-category="GAZETECİ">GAZETECİ</button>
+              <button class="filter-btn" data-category="INFLUENCER">INFLUENCER</button>
+              <button class="filter-btn" data-category="SPOR">SPOR</button>
+              <button class="filter-btn" data-category="SİYASİ">SİYASİ</button>
+              <button class="filter-btn" data-category="MARKA">MARKA</button>
+              <button class="filter-btn" data-category="AKTİVİST">AKTİVİST</button>
+              <button class="filter-btn" data-category="DİN ADAMI">DİN ADAMI</button>
+              <button class="filter-btn" data-category="DİĞER">DİĞER</button>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
