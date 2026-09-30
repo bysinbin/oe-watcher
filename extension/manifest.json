@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OE Watcher // Akıllı İçerik Filtresi",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "İnternette kara listedeki kişilerin geçtiği metin, haber ve paylaşımları tespit eder; görmeden önce onayınızı sorar.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -18,7 +18,8 @@
     }
   },
   "permissions": [
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
     "http://127.0.0.1:8080/*",
@@ -39,6 +40,16 @@
         "content.css"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "default_persons.json"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

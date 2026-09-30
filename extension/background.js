@@ -4,61 +4,81 @@ const DEFAULT_CONFIG = {
   apiUrl: "http://127.0.0.1:8080",
   blurIntensity: "medium", // low, medium, high
   lastSync: null,
-  personsCount: 0
+  personsCount: 574
 };
+
+// Helper to load bundled fallback data
+async function loadBundledFallback() {
+  try {
+    const url = chrome.runtime.getURL('default_persons.json');
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return {
+      persons: data.persons || [],
+      aliases: data.aliases || {},
+      excludeList: data.exclude_list || []
+    };
+  } catch (err) {
+    console.error('[OE Watcher] Fallback load error:', err);
+    return { persons: [], aliases: {}, excludeList: [] };
+  }
+}
 
 // Initial setup on install
 chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.local.get(['settings', 'persons', 'rules']);
+  const current = await chrome.storage.local.get(['settings', 'persons']);
   if (!current.settings) {
     await chrome.storage.local.set({ settings: DEFAULT_CONFIG });
   }
+
+  // Pre-seed with bundled fallback if empty
+  if (!current.persons || current.persons.length === 0) {
+    const fallback = await loadBundledFallback();
+    await chrome.storage.local.set({
+      persons: fallback.persons,
+      aliases: fallback.aliases,
+      excludeList: fallback.excludeList
+    });
+  }
+
+  // Then attempt live sync with local OE Watcher daemon
   await syncWithOEWatcher();
 });
 
-// Sync data periodically (every 15 minutes)
-chrome.alarms.create('sync_oelist', { periodInMinutes: 15 });
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'sync_oelist') {
-    syncWithOEWatcher();
-  }
-});
+// Periodic background sync (every 15 minutes)
+if (chrome.alarms) {
+  chrome.alarms.create('sync_oelist', { periodInMinutes: 15 });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'sync_oelist') {
+      syncWithOEWatcher();
+    }
+  });
+}
 
 // Core sync function to fetch from OE Watcher local daemon
 async function syncWithOEWatcher() {
+  const { settings = DEFAULT_CONFIG } = await chrome.storage.local.get('settings');
+  const baseUrl = settings.apiUrl || "http://127.0.0.1:8080";
+
   try {
-    const { settings = DEFAULT_CONFIG } = await chrome.storage.local.get('settings');
-    const baseUrl = settings.apiUrl || "http://127.0.0.1:8080";
-
-    // 1. Fetch persons list
-    const pRes = await fetch(`${baseUrl}/api/persons?category=HEPSİ`, {
-      headers: { 'Accept': 'application/json' }
+    // 1. Fetch from unauthenticated extension sync endpoint
+    const res = await fetch(`${baseUrl}/api/extension/sync`, {
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-store'
     });
-    if (!pRes.ok) throw new Error(`HTTP ${pRes.status}`);
-    const pData = await pRes.json();
-    const persons = pData.persons || [];
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
 
-    // 2. Fetch rules (aliases & exclude list)
-    let aliases = {};
-    let excludeList = [];
-    try {
-      const rRes = await fetch(`${baseUrl}/api/rules`, {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (rRes.ok) {
-        const rData = await rRes.json();
-        aliases = rData.aliases || {};
-        excludeList = rData.exclude_list || [];
-      }
-    } catch (_) {}
+    const rawPersons = data.persons || [];
+    const aliases = data.aliases || {};
+    const excludeList = data.exclude_list || [];
 
-    // Extract names for fast matching
-    const blacklistNames = [];
-    for (const p of persons) {
-      if (p.display_name) {
-        blacklistNames.push({
-          id: p.id,
-          name: p.display_name.trim(),
+    const blacklist = [];
+    for (const p of rawPersons) {
+      if (p.name) {
+        blacklist.push({
+          name: p.name.trim(),
           tags: p.tags || [],
           topics: p.topics || []
         });
@@ -68,26 +88,42 @@ async function syncWithOEWatcher() {
     const updatedSettings = {
       ...settings,
       lastSync: new Date().toISOString(),
-      personsCount: blacklistNames.length
+      personsCount: blacklist.length
     };
 
     await chrome.storage.local.set({
       settings: updatedSettings,
-      persons: blacklistNames,
+      persons: blacklist,
       aliases: aliases,
       excludeList: excludeList,
       apiConnected: true
     });
 
-    console.log(`[OE Watcher Extension] Senkronizasyon başarılı: ${blacklistNames.length} kişi yüklendi.`);
-    return { success: true, count: blacklistNames.length };
+    console.log(`[OE Watcher Extension] Senkronizasyon başarılı: ${blacklist.length} kişi yüklendi.`);
+    return { success: true, count: blacklist.length };
   } catch (err) {
-    console.warn('[OE Watcher Extension] Yerel API senkronizasyon hatası:', err.message);
-    const { settings = DEFAULT_CONFIG } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({
-      settings: { ...settings },
-      apiConnected: false
-    });
+    console.warn('[OE Watcher Extension] Yerel API erişilemedi, dahili veritabanı kontrol ediliyor:', err.message);
+
+    // Fallback: check if we already have persons; if not, load from default_persons.json
+    const existing = await chrome.storage.local.get('persons');
+    if (!existing.persons || existing.persons.length === 0) {
+      const fallback = await loadBundledFallback();
+      const updatedSettings = {
+        ...settings,
+        lastSync: new Date().toISOString(),
+        personsCount: fallback.persons.length
+      };
+      await chrome.storage.local.set({
+        settings: updatedSettings,
+        persons: fallback.persons,
+        aliases: fallback.aliases,
+        excludeList: fallback.excludeList,
+        apiConnected: false
+      });
+      return { success: true, count: fallback.persons.length, fallback: true };
+    }
+
+    await chrome.storage.local.set({ apiConnected: false });
     return { success: false, error: err.message };
   }
 }
@@ -95,9 +131,21 @@ async function syncWithOEWatcher() {
 // Handle runtime messages from content scripts and popup
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'GET_DATA') {
-    chrome.storage.local.get(['settings', 'persons', 'aliases', 'excludeList', 'apiConnected']).then(data => {
+    (async () => {
+      let data = await chrome.storage.local.get(['settings', 'persons', 'aliases', 'excludeList', 'apiConnected']);
+      if (!data.persons || data.persons.length === 0) {
+        const fallback = await loadBundledFallback();
+        data.persons = fallback.persons;
+        data.aliases = fallback.aliases;
+        data.excludeList = fallback.excludeList;
+        await chrome.storage.local.set({
+          persons: fallback.persons,
+          aliases: fallback.aliases,
+          excludeList: fallback.excludeList
+        });
+      }
       sendResponse(data);
-    });
+    })();
     return true; // Keep channel open for async response
   }
 
@@ -120,3 +168,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 });
+
+// Run sync at worker startup
+syncWithOEWatcher();

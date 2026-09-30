@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Person count
   const count = persons.length || settings.personsCount || 0;
-  statTotalPersons.textContent = count > 0 ? count : '573';
+  statTotalPersons.textContent = count > 0 ? count : '574';
 
   // API status
   updateApiStatus(data.apiConnected);
@@ -30,12 +30,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     lastSyncText.textContent = `Son senkron: ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
 
-  // 2. Get active tab badge count
+  // 2. Query active tab for real-time shielded count
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (activeTab && activeTab.id) {
-      const badge = await chrome.action.getBadgeText({ tabId: activeTab.id });
-      statTabCount.textContent = badge || '0';
+      chrome.tabs.sendMessage(activeTab.id, { type: 'GET_PAGE_STATS' }, (res) => {
+        if (!chrome.runtime.lastError && res && typeof res.shieldedCount === 'number') {
+          statTabCount.textContent = String(res.shieldedCount);
+        } else {
+          chrome.action.getBadgeText({ tabId: activeTab.id }).then(b => {
+            statTabCount.textContent = b || '0';
+          }).catch(() => {});
+        }
+      });
     }
   } catch (_) {}
 
@@ -59,6 +66,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         statTotalPersons.textContent = res.count;
         const now = new Date();
         lastSyncText.textContent = `Son senkron: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+        // Trigger rescan on active tab
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0] && tabs[0].id) {
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'RESCAN' }, (scanRes) => {
+              if (scanRes && typeof scanRes.shieldedCount === 'number') {
+                statTabCount.textContent = String(scanRes.shieldedCount);
+              }
+            });
+          }
+        });
       } else {
         updateApiStatus(false);
       }

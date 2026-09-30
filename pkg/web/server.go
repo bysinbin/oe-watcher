@@ -112,6 +112,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/auth-status", s.handleAuthStatus)
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/logout", s.handleLogout)
+	mux.HandleFunc("/api/extension/sync", s.handleExtensionSync)
 
 	// Protected API endpoints
 	mux.HandleFunc("/api/events", s.authMiddleware(s.handleEvents))
@@ -801,4 +802,42 @@ func (s *Server) handleHistoryClear(w http.ResponseWriter, r *http.Request) {
 		"message": "Geçmiş raporu ve istatistikler başarıyla temizlendi.",
 	})
 }
+
+func (s *Server) handleExtensionSync(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	all := s.app.GetAllPersons()
+	snap := s.app.GetRulesManager().GetSnapshot()
+
+	type ExtensionPerson struct {
+		Name   string   `json:"name"`
+		Tags   []string `json:"tags"`
+		Topics []string `json:"topics"`
+	}
+
+	list := make([]ExtensionPerson, 0, len(all))
+	for _, p := range all {
+		list = append(list, ExtensionPerson{
+			Name:   p.DisplayName,
+			Tags:   p.Tags,
+			Topics: p.Topics,
+		})
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"count":        len(list),
+		"persons":      list,
+		"aliases":      snap.Aliases,
+		"exclude_list": snap.ExcludeList,
+	})
+}
+
 

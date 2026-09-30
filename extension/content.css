@@ -1,8 +1,8 @@
 /* OE Watcher - Content Shield Styles */
 
 .oe-shielded-target {
-  filter: blur(10px) grayscale(40%) brightness(0.65) !important;
-  opacity: 0.35 !important;
+  filter: blur(14px) grayscale(50%) brightness(0.6) !important;
+  opacity: 0.25 !important;
   pointer-events: none !important;
   user-select: none !important;
   transition: filter 0.35s ease, opacity 0.35s ease !important;
@@ -21,8 +21,10 @@
   display: flex !important;
   flex-direction: column !important;
   gap: 10px !important;
-  background: linear-gradient(135deg, rgba(15, 17, 26, 0.95), rgba(24, 27, 40, 0.92)) !important;
-  border: 1px solid rgba(225, 29, 72, 0.4) !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  background: linear-gradient(135deg, rgba(15, 17, 26, 0.96), rgba(24, 27, 40, 0.94)) !important;
+  border: 1px solid rgba(225, 29, 72, 0.45) !important;
   border-left: 4px solid #e11d48 !important;
   border-radius: 8px !important;
   padding: 14px 18px !important;

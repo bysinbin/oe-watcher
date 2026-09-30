@@ -11,8 +11,39 @@
 
   let compiledMatchers = [];
   let shieldedCount = 0;
-  let isScanning = false;
-  let scanPending = false;
+  let scanTimer = null;
+
+  // Modern block & card selectors across YouTube, X/Twitter, Reddit, and News portals
+  const BLOCK_SELECTORS = [
+    // YouTube
+    'ytd-channel-renderer',
+    'ytd-video-renderer',
+    'ytd-rich-item-renderer',
+    'ytd-compact-video-renderer',
+    'ytd-grid-video-renderer',
+    'ytd-radio-renderer',
+    'ytd-shelf-renderer',
+    'ytd-reel-item-renderer',
+    'ytd-playlist-renderer',
+    'ytd-movie-renderer',
+    'ytd-show-renderer',
+    'yt-lockup-view-model',
+    // Twitter / X
+    'article[data-testid="tweet"]',
+    '[data-testid="cellInnerDiv"]',
+    'article',
+    // Reddit
+    'shreddit-post',
+    '[data-testid="post-container"]',
+    // News / Forums / Common layouts
+    '.entry-item',
+    '.news-item',
+    '.media-item',
+    '.feed-item',
+    '.card',
+    '.post',
+    'li[data-id]'
+  ];
 
   // Turkish character folding for accurate case-insensitive matching
   function foldTurkish(str) {
@@ -28,7 +59,26 @@
       .toLowerCase();
   }
 
-  // Load config & data from background
+  // Extract base names and aliases from compound names like "Ezhel (Ömer Sercan İpekçioğlu)"
+  function extractCandidateNames(rawName) {
+    const list = new Set();
+    const clean = (rawName || '').trim();
+    if (!clean) return [];
+
+    const parenMatch = clean.match(/^(.*?)\s*\((.*?)\)\s*$/);
+    if (parenMatch) {
+      const primary = parenMatch[1].trim();
+      const secondary = parenMatch[2].trim();
+      if (primary.length >= 3) list.add(primary);
+      if (secondary.length >= 3) list.add(secondary);
+    }
+    if (clean.length >= 3) {
+      list.add(clean);
+    }
+    return Array.from(list);
+  }
+
+  // Load config & data from background service worker
   function init() {
     chrome.runtime.sendMessage({ type: 'GET_DATA' }, (response) => {
       if (!response) return;
@@ -47,39 +97,45 @@
     });
   }
 
-  // Compile regex matchers with word boundary guards for fast scanning
+  // Compile regex matchers with word boundary guards
   function compileMatchers() {
-    const excludeSet = new Set(config.excludeList.map(e => foldTurkish(e)));
+    const excludeSet = new Set((config.excludeList || []).map(e => foldTurkish(e)));
     compiledMatchers = [];
 
     // 1. Direct persons
     for (const p of config.persons) {
-      const cleanName = foldTurkish(p.name);
-      if (cleanName.length < 3 || excludeSet.has(cleanName)) continue;
+      if (!p || !p.name) continue;
+      const candidates = extractCandidateNames(p.name);
 
-      // Escape regex special chars
-      const escaped = cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Word boundary regex: ensures "Cem" doesn't match "acemi", "Ali" doesn't match "kalibre"
-      const regex = new RegExp(`(?:^|[^a-zçğıöşüA-ZÇĞİÖŞÜ0-9])${escaped}(?:$|[^a-zçğıöşüA-ZÇĞİÖŞÜ0-9])`, 'i');
+      for (const cand of candidates) {
+        const folded = foldTurkish(cand);
+        if (folded.length < 3 || excludeSet.has(folded)) continue;
 
-      compiledMatchers.push({
-        displayName: p.name,
-        category: (p.tags && p.tags[0]) || 'Kara Liste',
-        topics: p.topics || [],
-        regex: regex
-      });
+        const escaped = folded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Word boundary: matches when surrounded by non-alphanumeric or edges
+        const regex = new RegExp(`(?:^|[^a-zçğıöşü0-9])${escaped}(?:$|[^a-zçğıöşü0-9])`, 'i');
+
+        compiledMatchers.push({
+          displayName: p.name,
+          matchedKeyword: cand,
+          category: (p.tags && p.tags[0]) || 'Kara Liste',
+          topics: p.topics || [],
+          regex: regex
+        });
+      }
     }
 
     // 2. Custom Aliases (Alias -> Target)
     if (config.aliases) {
       for (const [alias, target] of Object.entries(config.aliases)) {
-        const cleanAlias = foldTurkish(alias);
-        if (cleanAlias.length < 3 || excludeSet.has(cleanAlias)) continue;
-        const escaped = cleanAlias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`(?:^|[^a-zçğıöşüA-ZÇĞİÖŞÜ0-9])${escaped}(?:$|[^a-zçğıöşüA-ZÇĞİÖŞÜ0-9])`, 'i');
+        const folded = foldTurkish(alias);
+        if (folded.length < 3 || excludeSet.has(folded)) continue;
+        const escaped = folded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(?:^|[^a-zçğıöşü0-9])${escaped}(?:$|[^a-zçğıöşü0-9])`, 'i');
 
         compiledMatchers.push({
           displayName: `${target} (Alias: ${alias})`,
+          matchedKeyword: alias,
           category: 'Özel Tanımlı',
           topics: ['Alias Eşleşmesi'],
           regex: regex
@@ -94,28 +150,13 @@
     let curr = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
 
     while (curr && curr !== document.body && curr !== document.documentElement) {
-      // Social Media / Video / News specific containers
-      if (
-        curr.matches?.('article') ||
-        curr.matches?.('[data-testid="tweet"]') ||
-        curr.matches?.('[data-testid="cellInnerDiv"]') ||
-        curr.matches?.('ytd-video-renderer') ||
-        curr.matches?.('ytd-rich-item-renderer') ||
-        curr.matches?.('ytd-compact-video-renderer') ||
-        curr.matches?.('ytd-grid-video-renderer') ||
-        curr.matches?.('shreddit-post') ||
-        curr.matches?.('[data-testid="post-container"]') ||
-        curr.matches?.('.entry-item') ||
-        curr.matches?.('li[data-id]') ||
-        curr.matches?.('.card') ||
-        curr.matches?.('.news-item') ||
-        curr.matches?.('.post') ||
-        curr.matches?.('blockquote')
-      ) {
-        return curr;
+      for (const sel of BLOCK_SELECTORS) {
+        if (curr.matches && curr.matches(sel)) {
+          return curr;
+        }
       }
 
-      // If it's a paragraph or header
+      // Fallback for standard tags
       const tag = curr.tagName.toLowerCase();
       if (tag === 'p' || tag === 'li' || tag === 'blockquote') {
         return curr;
@@ -124,7 +165,7 @@
       curr = curr.parentElement;
     }
 
-    // Fallback: direct element parent
+    // Direct element parent fallback
     return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   }
 
@@ -133,10 +174,10 @@
     if (!container || container.hasAttribute('data-oe-shielded')) return;
     container.setAttribute('data-oe-shielded', 'true');
 
-    // Create wrapper & banner
+    // Add blurred visual shield to container
     container.classList.add('oe-shielded-target');
 
-    // Shield banner element
+    // Create prompt banner
     const banner = document.createElement('div');
     banner.className = 'oe-shield-banner';
 
@@ -171,7 +212,7 @@
       </div>
     `;
 
-    // Handle "İçeriği Göster"
+    // Action: "İçeriği Göster" (Temporarily unmask content)
     const btnReveal = banner.querySelector('.oe-btn-reveal');
     btnReveal.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -180,7 +221,6 @@
       container.classList.add('oe-revealed-target');
       banner.style.display = 'none';
 
-      // Insert minimal revert tag
       const revertTag = document.createElement('div');
       revertTag.className = 'oe-revert-tag';
       revertTag.innerHTML = `
@@ -198,16 +238,16 @@
       container.insertAdjacentElement('beforebegin', revertTag);
     });
 
-    // Handle "Gizli Tut"
+    // Action: "Gizli Tut" (Fully collapse container)
     const btnDismiss = banner.querySelector('.oe-btn-dismiss');
     btnDismiss.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
       container.style.display = 'none';
       banner.innerHTML = `
-        <div class="oe-shield-body" style="padding: 6px 12px; margin: 0;">
+        <div class="oe-shield-body" style="padding: 6px 12px; margin: 0; align-items: center;">
           <span style="font-size: 0.8rem; color: #94a3b8;">🛡️ [${escapeHTML(matchInfo.displayName)}] içeren paylaşım gizlendi.</span>
-          <button type="button" class="oe-btn oe-btn-reveal" style="padding: 2px 8px; font-size: 0.72rem; margin-left: 10px;">Geri Getir</button>
+          <button type="button" class="oe-btn oe-btn-reveal" style="padding: 3px 10px; font-size: 0.72rem; margin-left: auto;">Geri Getir</button>
         </div>
       `;
       banner.querySelector('.oe-btn-reveal').addEventListener('click', () => {
@@ -222,16 +262,50 @@
     chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: shieldedCount });
   }
 
-  // Scan text nodes across document
+  // Scan text nodes & key element attributes across document
   function scanDocument(rootNode = document.body) {
     if (!config.enabled || compiledMatchers.length === 0 || !rootNode) return;
 
+    const containersToShield = new Map();
+
+    function checkCandidate(str, elem) {
+      if (!str || str.length < 3) return;
+      const folded = foldTurkish(str);
+      for (const m of compiledMatchers) {
+        if (m.regex.test(folded)) {
+          const container = findBlockContainer(elem);
+          if (container && !container.hasAttribute('data-oe-shielded') && !containersToShield.has(container)) {
+            containersToShield.set(container, m);
+          }
+          break;
+        }
+      }
+    }
+
+    // 1. Scan attributes commonly containing full titles on YouTube & social media
+    const attrElements = (rootNode === document.body ? document : rootNode).querySelectorAll(
+      'a[title], a[aria-label], yt-formatted-string[title], yt-formatted-string[aria-label], [aria-label], img[alt]'
+    );
+    for (let i = 0; i < attrElements.length; i++) {
+      const el = attrElements[i];
+      if (el.closest('.oe-shield-banner') || el.closest('.oe-revert-tag') || el.closest('[data-oe-shielded]')) continue;
+
+      const title = el.getAttribute('title');
+      if (title) checkCandidate(title, el);
+
+      const aria = el.getAttribute('aria-label');
+      if (aria) checkCandidate(aria, el);
+
+      const alt = el.getAttribute('alt');
+      if (alt) checkCandidate(alt, el);
+    }
+
+    // 2. Scan text nodes using TreeWalker
     const walker = document.createTreeWalker(
       rootNode,
       NodeFilter.SHOW_TEXT,
       {
         acceptNode: function (node) {
-          // Skip script, style, input, textarea, and already shielded nodes
           const parent = node.parentElement;
           if (!parent) return NodeFilter.FILTER_REJECT;
           const tag = parent.tagName.toLowerCase();
@@ -241,7 +315,8 @@
             tag === 'textarea' ||
             tag === 'input' ||
             parent.closest('.oe-shield-banner') ||
-            parent.closest('.oe-revert-tag')
+            parent.closest('.oe-revert-tag') ||
+            parent.closest('[data-oe-shielded]')
           ) {
             return NodeFilter.FILTER_REJECT;
           }
@@ -253,57 +328,47 @@
       }
     );
 
-    const matchesToShield = [];
-    let currentNode = walker.nextNode();
-
-    while (currentNode) {
-      const text = foldTurkish(currentNode.nodeValue);
-      for (const m of compiledMatchers) {
-        if (m.regex.test(text)) {
-          const container = findBlockContainer(currentNode);
-          if (container && !container.hasAttribute('data-oe-shielded')) {
-            matchesToShield.push({ container, matchInfo: m });
-          }
-          break; // One match per block is sufficient
-        }
-      }
-      currentNode = walker.nextNode();
+    let textNode = walker.nextNode();
+    while (textNode) {
+      checkCandidate(textNode.nodeValue, textNode);
+      textNode = walker.nextNode();
     }
 
-    for (const item of matchesToShield) {
-      shieldElement(item.container, item.matchInfo);
+    // Execute shielding on detected containers
+    for (const [container, matchInfo] of containersToShield.entries()) {
+      shieldElement(container, matchInfo);
     }
   }
 
-  // Observe DOM for infinite scrolling & dynamic SPA frameworks (React, Vue, X/Twitter, YouTube)
+  // Trigger debounced scan for dynamic SPAs
+  function triggerScan() {
+    if (scanTimer) clearTimeout(scanTimer);
+    scanTimer = setTimeout(() => {
+      scanDocument();
+    }, 150);
+  }
+
+  // Observe DOM for infinite scrolling & dynamic SPA frameworks (YouTube, Twitter, Reddit)
   function startObserver() {
-    let debounceTimer = null;
-    const observer = new MutationObserver((mutations) => {
-      if (scanPending) return;
-      scanPending = true;
-
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        scanPending = false;
-        if (isScanning) return;
-        isScanning = true;
-
-        if (window.requestIdleCallback) {
-          requestIdleCallback(() => {
-            scanDocument();
-            isScanning = false;
-          }, { timeout: 300 });
-        } else {
-          scanDocument();
-          isScanning = false;
-        }
-      }, 200);
+    const observer = new MutationObserver(() => {
+      triggerScan();
     });
 
     observer.observe(document.body, {
       childList: true,
       subtree: true
     });
+
+    // YouTube SPA navigation events
+    window.addEventListener('yt-navigate-finish', () => {
+      setTimeout(triggerScan, 200);
+    });
+    window.addEventListener('yt-page-data-updated', () => {
+      setTimeout(triggerScan, 200);
+    });
+
+    window.addEventListener('popstate', triggerScan);
+    window.addEventListener('hashchange', triggerScan);
   }
 
   function escapeHTML(str) {
@@ -317,17 +382,17 @@
     }[tag] || tag));
   }
 
-  // Listen for setting changes from popup
+  // Listen for setting changes from popup & background
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.settings) {
       config.enabled = changes.settings.newValue ? changes.settings.newValue.enabled !== false : true;
       if (!config.enabled) {
-        // Remove all shields
         document.querySelectorAll('.oe-shield-banner, .oe-revert-tag').forEach(el => el.remove());
         document.querySelectorAll('.oe-shielded-target').forEach(el => {
           el.classList.remove('oe-shielded-target');
           el.removeAttribute('data-oe-shielded');
         });
+        shieldedCount = 0;
         chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: 0 });
       } else {
         scanDocument();
@@ -338,7 +403,20 @@
     }
   });
 
-  // Start initialization
+  // Message handler for live stats & manual rescan from popup
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === 'GET_PAGE_STATS') {
+      sendResponse({ shieldedCount: shieldedCount });
+      return false;
+    }
+    if (msg.type === 'RESCAN') {
+      scanDocument();
+      sendResponse({ ok: true, shieldedCount: shieldedCount });
+      return false;
+    }
+  });
+
+  // Initialize script
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
