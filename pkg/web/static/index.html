@@ -258,13 +258,72 @@
           </div>
         </div>
 
-        <!-- Detection History Log -->
+        <!-- Detection History Log & Reports -->
         <div class="card history-card">
-          <div class="card-header">
-            <span class="section-label">GEÇMİŞ RAPORU //</span>
+          <div class="card-header history-card-header">
+            <div class="history-title-group">
+              <span class="section-label">GEÇMİŞ RAPORU //</span>
+              <span class="history-count-badge" id="historyCountBadge">0 Kayıt</span>
+            </div>
+            <div class="history-actions">
+              <button type="button" class="btn btn-sm btn-outline" id="btnExportCSV" title="Geçmiş raporunu Excel/CSV olarak indir">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                CSV Raporu
+              </button>
+              <button type="button" class="btn btn-sm btn-outline" id="btnExportJSON" title="Geçmişi JSON formatında indir">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                JSON
+              </button>
+              <button type="button" class="btn btn-sm btn-danger-outline" id="btnClearHistory" title="Geçmiş kayıtlarını temizle">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Temizle
+              </button>
+            </div>
           </div>
+
+          <!-- History Quick Stats Bar -->
+          <div class="history-stats-bar">
+            <div class="hist-stat-item">
+              <span class="hist-stat-label">Toplam Tespit</span>
+              <span class="hist-stat-val text-red" id="histStatDetections">0</span>
+            </div>
+            <div class="hist-stat-item">
+              <span class="hist-stat-label">Otomatik Geçilen</span>
+              <span class="hist-stat-val text-green" id="histStatAutoSkips">0</span>
+            </div>
+            <div class="hist-stat-item">
+              <span class="hist-stat-label">Manuel Geçilen</span>
+              <span class="hist-stat-val text-amber" id="histStatManualSkips">0</span>
+            </div>
+            <div class="hist-stat-item">
+              <span class="hist-stat-label">Ertelenen</span>
+              <span class="hist-stat-val text-purple" id="histStatSnoozed">0</span>
+            </div>
+          </div>
+
+          <!-- History Filter and Search Bar -->
+          <div class="history-toolbar">
+            <div class="history-filter-pills" id="historyFilterPills">
+              <button type="button" class="hist-pill active" data-action="all">Tümü</button>
+              <button type="button" class="hist-pill" data-action="auto_skipped">⏩ Otomatik</button>
+              <button type="button" class="hist-pill" data-action="manual_skip">⏭️ Manuel</button>
+              <button type="button" class="hist-pill" data-action="snoozed">⏳ Ertelenen</button>
+              <button type="button" class="hist-pill" data-action="kept">⏹️ Dinlenen</button>
+            </div>
+            <div class="history-search-wrap">
+              <input type="text" id="historySearchInput" class="history-search-input" placeholder="Geçmişte sanatçı, şarkı veya kişi ara...">
+              <button type="button" id="historySearchClear" class="history-search-clear" style="display:none;">✕</button>
+            </div>
+          </div>
+
+          <!-- History List Container -->
           <div class="history-list" id="historyList">
             <div class="empty-state">Henüz bir tespit geçmişi yok.</div>
+          </div>
+
+          <!-- Load More Button -->
+          <div class="history-footer" id="historyFooter" style="display:none;">
+            <button type="button" class="btn btn-sm btn-ghost" id="btnLoadMoreHistory">Daha Fazla Kayıt Yükle...</button>
           </div>
         </div>
 

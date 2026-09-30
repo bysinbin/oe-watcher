@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "stats": {
+    "total_detections": 0,
+    "total_auto_skips": 0,
+    "total_manual_skips": 0,
+    "total_kept": 0,
+    "total_snoozed": 0,
+    "top_persons": {},
+    "top_apps": {}
+  },
+  "items": []
+}

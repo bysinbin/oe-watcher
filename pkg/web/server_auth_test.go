@@ -154,4 +154,56 @@ func TestServerAuthentication(t *testing.T) {
 	if !strings.Contains(ct, "text/event-stream") {
 		t.Errorf("Expected text/event-stream Content-Type, got %s", ct)
 	}
+
+	// 10. Test History API endpoints
+	reqHistory, _ := http.NewRequest("GET", baseURL+"/api/history", nil)
+	reqHistory.Header.Set("Authorization", "Bearer "+token)
+	respHistory, err := http.DefaultClient.Do(reqHistory)
+	if err != nil {
+		t.Fatalf("History request failed: %v", err)
+	}
+	defer respHistory.Body.Close()
+	if respHistory.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 for /api/history, got %d", respHistory.StatusCode)
+	}
+
+	// Test CSV export
+	reqCSV, _ := http.NewRequest("GET", baseURL+"/api/history/export?format=csv", nil)
+	reqCSV.Header.Set("Authorization", "Bearer "+token)
+	respCSV, err := http.DefaultClient.Do(reqCSV)
+	if err != nil {
+		t.Fatalf("History CSV export failed: %v", err)
+	}
+	defer respCSV.Body.Close()
+	if respCSV.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 for CSV export, got %d", respCSV.StatusCode)
+	}
+	if !strings.Contains(respCSV.Header.Get("Content-Type"), "text/csv") {
+		t.Errorf("Expected text/csv Content-Type, got %s", respCSV.Header.Get("Content-Type"))
+	}
+
+	// Test JSON export
+	reqJSON, _ := http.NewRequest("GET", baseURL+"/api/history/export?format=json", nil)
+	reqJSON.Header.Set("Authorization", "Bearer "+token)
+	respJSON, err := http.DefaultClient.Do(reqJSON)
+	if err != nil {
+		t.Fatalf("History JSON export failed: %v", err)
+	}
+	defer respJSON.Body.Close()
+	if respJSON.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 for JSON export, got %d", respJSON.StatusCode)
+	}
+
+	// Test Clear History
+	reqClear, _ := http.NewRequest("POST", baseURL+"/api/history/clear", nil)
+	reqClear.Header.Set("Authorization", "Bearer "+token)
+	respClear, err := http.DefaultClient.Do(reqClear)
+	if err != nil {
+		t.Fatalf("History clear failed: %v", err)
+	}
+	defer respClear.Body.Close()
+	if respClear.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 for clear history, got %d", respClear.StatusCode)
+	}
 }
+

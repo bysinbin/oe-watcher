@@ -73,8 +73,28 @@ document.addEventListener('DOMContentLoaded', () => {
   // Person List & Search Elements
   const searchInput = document.getElementById('searchInput');
   const personsList = document.getElementById('personsList');
-  const personCountBadge = document.getElementById('personCountBadge');
   const historyList = document.getElementById('historyList');
+  const historyCountBadge = document.getElementById('historyCountBadge');
+  const btnExportCSV = document.getElementById('btnExportCSV');
+  const btnExportJSON = document.getElementById('btnExportJSON');
+  const btnClearHistory = document.getElementById('btnClearHistory');
+  const histStatDetections = document.getElementById('histStatDetections');
+  const histStatAutoSkips = document.getElementById('histStatAutoSkips');
+  const histStatManualSkips = document.getElementById('histStatManualSkips');
+  const histStatSnoozed = document.getElementById('histStatSnoozed');
+  const historyFilterPills = document.getElementById('historyFilterPills');
+  const historySearchInput = document.getElementById('historySearchInput');
+  const historySearchClear = document.getElementById('historySearchClear');
+  const historyFooter = document.getElementById('historyFooter');
+  const btnLoadMoreHistory = document.getElementById('btnLoadMoreHistory');
+
+  let currentHistoryAction = 'all';
+  let currentHistorySearch = '';
+  let historyLimit = 25;
+  let historyOffset = 0;
+  let historyTotal = 0;
+  let isHistorySearchActive = false;
+  let allHistoryItems = [];
 
   // Login Overlay Elements
   const loginOverlay = document.getElementById('loginOverlay');
@@ -115,6 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFilterButtons();
   setupEventListeners();
   setupRulesManagement();
+  setupHistoryControls();
   setupAuthHandlers();
   checkAuthAndStart();
 
@@ -143,6 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function startApp() {
     loadPersons();
     loadRules();
+    fetchHistory(false);
     setupSSE();
     pollStatus();
     if (!pollingTimer) {
@@ -655,6 +677,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (statTotalDetections) statTotalDetections.textContent = state.stats.total_detections || 0;
       if (statAutoSkips) statAutoSkips.textContent = state.stats.total_auto_skips || 0;
       if (statManualSkips) statManualSkips.textContent = state.stats.total_manual_skips || 0;
+      if (histStatDetections) histStatDetections.textContent = state.stats.total_detections || 0;
+      if (histStatAutoSkips) histStatAutoSkips.textContent = state.stats.total_auto_skips || 0;
+      if (histStatManualSkips) histStatManualSkips.textContent = state.stats.total_manual_skips || 0;
+      if (histStatSnoozed) histStatSnoozed.textContent = state.stats.total_snoozed || (state.snoozed_list ? state.snoozed_list.length : 0);
+
       if (statTopPerson) {
         let topName = '-';
         let maxCount = 0;
@@ -685,8 +712,11 @@ document.addEventListener('DOMContentLoaded', () => {
       matchAlertBox.style.display = 'none';
     }
 
-    // History Render
-    renderHistory(state.history || []);
+    // History Render (only if user is not filtering/searching)
+    if (!isHistorySearchActive) {
+      allHistoryItems = state.history || [];
+      renderHistory(allHistoryItems);
+    }
   }
 
   async function pollStatus() {
@@ -753,46 +783,242 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function fetchHistory(append = false) {
+    try {
+      const url = new URL('/api/history', window.location.origin);
+      url.searchParams.set('limit', historyLimit);
+      url.searchParams.set('offset', historyOffset);
+      if (currentHistoryAction && currentHistoryAction !== 'all') {
+        url.searchParams.set('action', currentHistoryAction);
+      }
+      if (currentHistorySearch) {
+        url.searchParams.set('search', currentHistorySearch);
+      }
+
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error('History fetch error');
+      const data = await res.json();
+
+      historyTotal = data.total || 0;
+      if (append) {
+        allHistoryItems = allHistoryItems.concat(data.items || []);
+      } else {
+        allHistoryItems = data.items || [];
+      }
+
+      renderHistory(allHistoryItems);
+
+      if (data.stats) {
+        if (histStatDetections) histStatDetections.textContent = data.stats.total_detections || 0;
+        if (histStatAutoSkips) histStatAutoSkips.textContent = data.stats.total_auto_skips || 0;
+        if (histStatManualSkips) histStatManualSkips.textContent = data.stats.total_manual_skips || 0;
+        if (histStatSnoozed) histStatSnoozed.textContent = data.stats.total_snoozed || 0;
+      }
+
+      if (historyFooter) {
+        if (allHistoryItems.length < historyTotal) {
+          historyFooter.style.display = 'block';
+        } else {
+          historyFooter.style.display = 'none';
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    }
+  }
+
   function renderHistory(items) {
+    if (historyCountBadge) {
+      const count = items ? items.length : 0;
+      historyCountBadge.textContent = `${count} Kayıt`;
+    }
+
     if (!items || items.length === 0) {
       historyList.innerHTML = '<div class="empty-state">Henüz bir tespit geçmişi yok.</div>';
+      if (historyFooter) historyFooter.style.display = 'none';
       return;
     }
 
-    historyList.innerHTML = items.slice(0, 15).map(item => {
-      let actionLabel = 'Dinlendi';
+    historyList.innerHTML = items.map(item => {
+      let actionLabel = item.action_label || 'Dinlendi';
       let actionClass = 'kept';
+      let badgeClass = 'badge-kept';
+
       if (item.action === 'skipped') {
-        actionLabel = 'Geçildi (Onay)';
+        actionLabel = 'Onay ile Geçildi';
         actionClass = 'skipped';
+        badgeClass = 'badge-manual-skip';
       } else if (item.action === 'auto_skipped') {
         actionLabel = 'Otomatik Geçildi';
-        actionClass = 'skipped';
+        actionClass = 'auto_skipped';
+        badgeClass = 'badge-auto-skip';
       } else if (item.action === 'manual_skip') {
         actionLabel = 'Manuel Geçildi';
-        actionClass = 'skipped';
+        actionClass = 'manual_skip';
+        badgeClass = 'badge-manual-skip';
       } else if (item.action === 'snoozed') {
         actionLabel = '1 Saat Ertelendi';
         actionClass = 'snoozed';
+        badgeClass = 'badge-snooze';
+      } else if (item.action === 'skip_failed') {
+        actionLabel = 'Geçiş Başarısız';
+        actionClass = 'skip_failed';
+        badgeClass = 'badge-failed';
       } else if (item.action === 'timeout') {
         actionLabel = 'Zaman Aşımı';
         actionClass = 'kept';
+        badgeClass = 'badge-kept';
+      } else if (item.action === 'pending') {
+        actionLabel = 'Tespit Edildi';
+        actionClass = 'pending';
+        badgeClass = 'badge-kept';
       }
+
+      const cat = item.category || (item.person && item.person.tags ? item.person.tags.join(', ') : '');
+      const catBadge = cat ? `<span class="hist-item-cat">${escapeHTML(cat)}</span>` : '';
+      const appBadge = item.track && item.track.app ? `<span class="hist-item-app-badge">${escapeHTML(item.track.app)}</span>` : '';
+      const trackTitle = item.track ? `${escapeHTML(item.track.artist || '')} - ${escapeHTML(item.track.title || '')}` : '-';
 
       return `
         <div class="history-item ${actionClass}">
-          <div>
-            <strong>${escapeHTML(item.person.display_name)}</strong>
-            <span style="color: var(--text-secondary); margin-left: 6px;">(${escapeHTML(item.track.artist)} - ${escapeHTML(item.track.title)})</span>
+          <div class="hist-item-left">
+            <div class="hist-item-meta">
+              <span class="hist-item-person">${escapeHTML((item.person && item.person.display_name) || 'Bilinmeyen Kişi')}</span>
+              ${catBadge}
+              ${appBadge}
+            </div>
+            <div class="hist-item-track" title="${trackTitle}">
+              🎵 ${trackTitle}
+            </div>
           </div>
-          <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted);">
-            <span style="margin-right: 8px;">${item.timestamp}</span>
-            <span class="badge ${actionClass === 'skipped' ? 'warn' : ''}">${actionLabel}</span>
+          <div class="hist-item-right">
+            <span class="badge ${badgeClass}">${escapeHTML(actionLabel)}</span>
+            <span class="hist-time">${escapeHTML(item.timestamp || '')}</span>
           </div>
         </div>
       `;
     }).join('');
   }
+
+  function setupHistoryControls() {
+    // Export CSV
+    if (btnExportCSV) {
+      btnExportCSV.addEventListener('click', async () => {
+        try {
+          showToast('📥 CSV geçmiş raporu indiriliyor...');
+          const res = await fetch('/api/history/export?format=csv');
+          if (!res.ok) throw new Error('CSV indirme başarısız');
+          const blob = await res.blob();
+          const downloadUrl = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          const today = new Date().toISOString().slice(0, 10);
+          a.download = `oe_watcher_gecmis_raporu_${today}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(downloadUrl);
+          showToast('✅ CSV geçmiş raporu indirildi.');
+        } catch (err) {
+          showToast('❌ İndirme hatası: ' + err.message);
+        }
+      });
+    }
+
+    // Export JSON
+    if (btnExportJSON) {
+      btnExportJSON.addEventListener('click', async () => {
+        try {
+          showToast('📥 JSON geçmiş raporu indiriliyor...');
+          const res = await fetch('/api/history/export?format=json');
+          if (!res.ok) throw new Error('JSON indirme başarısız');
+          const blob = await res.blob();
+          const downloadUrl = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          const today = new Date().toISOString().slice(0, 10);
+          a.download = `oe_watcher_gecmis_raporu_${today}.json`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(downloadUrl);
+          showToast('✅ JSON geçmiş raporu indirildi.');
+        } catch (err) {
+          showToast('❌ İndirme hatası: ' + err.message);
+        }
+      });
+    }
+
+    // Clear History
+    if (btnClearHistory) {
+      btnClearHistory.addEventListener('click', async () => {
+        if (!confirm('⚠️ Tüm tespit geçmişini ve istatistik raporlarını kalıcı olarak silmek istediğinizden emin misiniz?')) {
+          return;
+        }
+        try {
+          const res = await fetch('/api/history/clear', { method: 'POST' });
+          if (!res.ok) throw new Error('Geçmiş temizlenemedi');
+          showToast('🗑️ Geçmiş raporu ve istatistikler temizlendi.');
+          historyOffset = 0;
+          fetchHistory(false);
+        } catch (err) {
+          showToast('❌ Hata: ' + err.message);
+        }
+      });
+    }
+
+    // Filter pills
+    if (historyFilterPills) {
+      historyFilterPills.querySelectorAll('.hist-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+          historyFilterPills.querySelectorAll('.hist-pill').forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          currentHistoryAction = pill.getAttribute('data-action') || 'all';
+          isHistorySearchActive = (currentHistoryAction !== 'all' || currentHistorySearch !== '');
+          historyOffset = 0;
+          fetchHistory(false);
+        });
+      });
+    }
+
+    // Search input
+    let searchDebounce = null;
+    if (historySearchInput) {
+      historySearchInput.addEventListener('input', () => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => {
+          currentHistorySearch = historySearchInput.value.trim();
+          isHistorySearchActive = (currentHistoryAction !== 'all' || currentHistorySearch !== '');
+          if (historySearchClear) {
+            historySearchClear.style.display = currentHistorySearch ? 'block' : 'none';
+          }
+          historyOffset = 0;
+          fetchHistory(false);
+        }, 250);
+      });
+    }
+
+    // Search clear button
+    if (historySearchClear) {
+      historySearchClear.addEventListener('click', () => {
+        historySearchInput.value = '';
+        currentHistorySearch = '';
+        isHistorySearchActive = (currentHistoryAction !== 'all');
+        historySearchClear.style.display = 'none';
+        historyOffset = 0;
+        fetchHistory(false);
+      });
+    }
+
+    // Load More button
+    if (btnLoadMoreHistory) {
+      btnLoadMoreHistory.addEventListener('click', () => {
+        historyOffset += historyLimit;
+        fetchHistory(true);
+      });
+    }
+  }
+
 
   function setupRulesManagement() {
     // Tab switching

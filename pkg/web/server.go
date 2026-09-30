@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -122,6 +123,9 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/player/play-pause", s.authMiddleware(s.handlePlayPause))
 	mux.HandleFunc("/api/sync", s.authMiddleware(s.handleSync))
 	mux.HandleFunc("/api/persons", s.authMiddleware(s.handlePersons))
+	mux.HandleFunc("/api/history", s.authMiddleware(s.handleHistory))
+	mux.HandleFunc("/api/history/export", s.authMiddleware(s.handleHistoryExport))
+	mux.HandleFunc("/api/history/clear", s.authMiddleware(s.handleHistoryClear))
 	mux.HandleFunc("/api/rules", s.authMiddleware(s.handleRules))
 	mux.HandleFunc("/api/rules/export", s.authMiddleware(s.handleRulesExport))
 	mux.HandleFunc("/api/rules/import", s.authMiddleware(s.handleRulesImport))
@@ -704,3 +708,97 @@ func (s *Server) handleRuleExclude(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	q := r.URL.Query()
+	limit := 50
+	if l := q.Get("limit"); l != "" {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			limit = val
+		}
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	offset := 0
+	if o := q.Get("offset"); o != "" {
+		if val, err := strconv.Atoi(o); err == nil && val >= 0 {
+			offset = val
+		}
+	}
+
+	action := q.Get("action")
+	search := q.Get("search")
+
+	items, total := s.app.GetHistory(limit, offset, action, search)
+	hStats := s.app.GetHistoryStats()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"items":  items,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+		"stats":  hStats,
+	})
+}
+
+func (s *Server) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	format := strings.ToLower(r.URL.Query().Get("format"))
+	nowDate := time.Now().Format("2006-01-02")
+
+	if format == "json" {
+		data, err := s.app.ExportHistoryJSON()
+		if err != nil {
+			http.Error(w, "JSON dışa aktarılamadı: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"oe_watcher_gecmis_raporu_%s.json\"", nowDate))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+		return
+	}
+
+	// Default: CSV export with UTF-8 BOM
+	data, err := s.app.ExportHistoryCSV()
+	if err != nil {
+		http.Error(w, "CSV dışa aktarılamadı: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"oe_watcher_gecmis_raporu_%s.csv\"", nowDate))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func (s *Server) handleHistoryClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := s.app.ClearHistory(); err != nil {
+		http.Error(w, "Geçmiş temizlenemedi: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Geçmiş raporu ve istatistikler başarıyla temizlendi.",
+	})
+}
+

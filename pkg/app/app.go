@@ -9,6 +9,7 @@ import (
 
 	"medya-filter/pkg/api"
 	"medya-filter/pkg/config"
+	"medya-filter/pkg/history"
 	"medya-filter/pkg/matcher"
 	"medya-filter/pkg/media"
 	"medya-filter/pkg/models"
@@ -30,6 +31,7 @@ type App struct {
 	configPath          string
 	client              *api.Client
 	rulesMgr            *rules.Manager
+	historyMgr          *history.Manager
 	matcher             *matcher.Matcher
 	currentMedia        models.MediaInfo
 	currentMatch        *models.MatchResult
@@ -62,6 +64,8 @@ func NewAppWithConfig(cfg *config.Config, configPath, dataDir string) *App {
 	}
 
 	rulesMgr := rules.NewManager(dataDir)
+	historyMgr := history.NewManager(dataDir)
+
 	m := matcher.NewMatcher(nil)
 	m.SetRulesManager(rulesMgr)
 	m.SetFuzzy(cfg.FuzzyMatching, cfg.FuzzyThreshold)
@@ -71,27 +75,38 @@ func NewAppWithConfig(cfg *config.Config, configPath, dataDir string) *App {
 		cats = []string{cfg.Category}
 	}
 
+	hStats := historyMgr.GetStats()
+	appStats := AppStats{
+		TotalDetections:  hStats.TotalDetections,
+		TotalAutoSkips:   hStats.TotalAutoSkips,
+		TotalManualSkips: hStats.TotalManualSkips,
+		TopPersons:       hStats.TopPersons,
+	}
+	if appStats.TopPersons == nil {
+		appStats.TopPersons = make(map[string]int)
+	}
+
 	return &App{
 		cfg:              cfg,
 		configPath:       configPath,
 		client:           api.NewClient(cfg.ApiURL, dataDir),
 		rulesMgr:         rulesMgr,
+		historyMgr:       historyMgr,
 		matcher:          m,
 		autoSkip:         cfg.AutoSkip,
 		enableDialog:     cfg.EnableDialog,
 		pollInterval:     interval,
-		history:          make([]models.HistoryItem, 0),
+		history:          historyMgr.GetAllItems(),
 		activeCategories: cats,
 		activeTopics:     []string{"TÜM KONULAR"},
 		syncStatus:       "Başlatılıyor...",
 		snoozedPersons:   make(map[string]time.Time),
-		stats: AppStats{
-			TopPersons: make(map[string]int),
-		},
-		fastPollChan:   make(chan struct{}, 10),
-		stateListeners: make([]func(AppState), 0),
+		stats:            appStats,
+		fastPollChan:     make(chan struct{}, 10),
+		stateListeners:   make([]func(AppState), 0),
 	}
 }
+
 
 func NewApp(dataDir string, autoSkip, enableDialog bool, pollInterval time.Duration) *App {
 	cfg := config.DefaultConfig()
@@ -319,15 +334,13 @@ func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaI
 
 	// 3. Skip handling
 	if autoSkip {
-		a.mu.Lock()
-		a.stats.TotalAutoSkips++
-		a.mu.Unlock()
 		fmt.Println("\033[1;32m⏩ Otomatik Geçiş devrede: Şarkı geçiliyor...\033[0m")
 		if err := media.SkipTrack(track); err != nil {
 			fmt.Printf("\033[1;31m❌ Şarkı geçilemedi: %v\033[0m\n", err)
 			notifier.ShowNotification("⚠️ Şarkı Geçilemedi", "Chrome Ayarı Gerekli", "Görünüm > Geliştirici > Apple Events iznini açın")
+			a.recordHistoryWithDetails(track, match.Person, "skip_failed", false, match.Category, match.Topics, "Geçiş Başarısız")
 		} else {
-			a.recordHistory(track, match.Person, "auto_skipped")
+			a.recordHistoryWithDetails(track, match.Person, "auto_skipped", true, match.Category, match.Topics, "Otomatik Geçildi")
 			notifier.ShowNotification("⏩ Şarkı Otomatik Geçildi", match.Person.DisplayName, track.Title)
 		}
 		return
@@ -346,51 +359,71 @@ func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaI
 			switch action {
 			case notifier.ActionSkip:
 				fmt.Println("\033[1;32m✅ Kullanıcı 'Şarkıyı Geç' butonuna bastı. Geçiliyor...\033[0m")
-				a.mu.Lock()
-				a.stats.TotalManualSkips++
-				a.mu.Unlock()
 				if err := media.SkipTrack(track); err != nil {
 					fmt.Printf("\033[1;31m❌ Şarkı geçilemedi: %v\033[0m\n", err)
 					notifier.ShowNotification("⚠️ Şarkı Geçilemedi", "Chrome Ayarı Gerekli", "Görünüm > Geliştirici > Apple Events iznini açın")
+					a.recordHistoryWithDetails(track, match.Person, "skip_failed", false, match.Category, match.Topics, "Geçiş Başarısız")
 				} else {
-					a.recordHistory(track, match.Person, "skipped")
+					a.recordHistoryWithDetails(track, match.Person, "skipped", true, match.Category, match.Topics, "Onay ile Geçildi")
 					notifier.ShowNotification("⏩ Şarkı Geçildi", match.Person.DisplayName, track.Title)
 				}
 			case notifier.ActionSnooze:
 				fmt.Printf("\033[1;33m⏳ Kullanıcı '1 Saat Ertele' seçti: '%s' 1 saat boyunca muaf tutulacak.\033[0m\n", match.Person.DisplayName)
 				a.SnoozePerson(match.Person.DisplayName, 1*time.Hour)
-				a.recordHistory(track, match.Person, "snoozed")
+				a.recordHistoryWithDetails(track, match.Person, "snoozed", true, match.Category, match.Topics, "1 Saat Ertelendi")
 				notifier.ShowNotification("⏳ 1 Saat Ertelendi", match.Person.DisplayName, "Bu kişi 1 saat boyunca uyarılmayacak.")
 			case notifier.ActionKeep:
 				fmt.Println("\033[1;30m⏹️ Kullanıcı şarkıyı dinlemeye devam etmeyi seçti.\033[0m")
-				a.recordHistory(track, match.Person, "kept")
+				a.recordHistoryWithDetails(track, match.Person, "kept", true, match.Category, match.Topics, "Dinlendi")
 			default:
-				a.recordHistory(track, match.Person, "timeout")
+				a.recordHistoryWithDetails(track, match.Person, "timeout", true, match.Category, match.Topics, "Zaman Aşımı")
 			}
 		}()
 	} else {
-		a.recordHistory(track, match.Person, "pending")
+		a.recordHistoryWithDetails(track, match.Person, "pending", true, match.Category, match.Topics, "Eşleşti (Beklemede)")
 	}
 }
 
-func (a *App) recordHistory(track models.MediaInfo, person models.Person, action string) {
-	a.mu.Lock()
+func (a *App) recordHistoryWithDetails(track models.MediaInfo, person models.Person, action string, success bool, category string, topics []string, actionLabel string) {
+	now := time.Now()
 	item := models.HistoryItem{
-		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
-		Timestamp: time.Now().Format("15:04:05"),
-		Track:     track,
-		Person:    person,
-		Action:    action,
+		ID:          fmt.Sprintf("%d", now.UnixNano()),
+		Timestamp:   now.Format("2006-01-02 15:04:05"),
+		Track:       track,
+		Person:      person,
+		Category:    category,
+		Topics:      topics,
+		Action:      action,
+		ActionLabel: actionLabel,
+		Success:     success,
 	}
 
-	// Keep max 50 items
-	a.history = append([]models.HistoryItem{item}, a.history...)
-	if len(a.history) > 50 {
-		a.history = a.history[:50]
+	if a.historyMgr != nil {
+		a.historyMgr.Record(item)
+		hStats := a.historyMgr.GetStats()
+		a.mu.Lock()
+		a.history = a.historyMgr.GetAllItems()
+		a.stats = AppStats{
+			TotalDetections:  hStats.TotalDetections,
+			TotalAutoSkips:   hStats.TotalAutoSkips,
+			TotalManualSkips: hStats.TotalManualSkips,
+			TopPersons:       hStats.TopPersons,
+		}
+		a.mu.Unlock()
+	} else {
+		a.mu.Lock()
+		a.history = append([]models.HistoryItem{item}, a.history...)
+		if len(a.history) > 100 {
+			a.history = a.history[:100]
+		}
+		a.mu.Unlock()
 	}
-	a.mu.Unlock()
 
 	a.notifyStateChanged()
+}
+
+func (a *App) recordHistory(track models.MediaInfo, person models.Person, action string) {
+	a.recordHistoryWithDetails(track, person, action, true, "", nil, "")
 }
 
 // SkipCurrent forces skip on current media.
@@ -398,19 +431,26 @@ func (a *App) SkipCurrent() error {
 	a.mu.RLock()
 	cur := a.currentMedia
 	match := a.currentMatch
+	autoSkip := a.autoSkip
 	a.mu.RUnlock()
 
 	err := media.SkipTrack(cur)
 	if err == nil {
-		a.mu.Lock()
-		a.stats.TotalManualSkips++
-		a.mu.Unlock()
 		if match != nil {
-			a.recordHistory(cur, match.Person, "manual_skip")
+			action := "manual_skip"
+			label := "Manuel Geçildi"
+			if autoSkip {
+				action = "auto_skipped"
+				label = "Otomatik Geçildi"
+			}
+			a.recordHistoryWithDetails(cur, match.Person, action, true, match.Category, match.Topics, label)
 		}
+	} else if match != nil {
+		a.recordHistoryWithDetails(cur, match.Person, "skip_failed", false, match.Category, match.Topics, "Geçiş Başarısız")
 	}
 	return err
 }
+
 
 // PlayPauseCurrent toggles playback of current media.
 func (a *App) PlayPauseCurrent() error {
@@ -497,6 +537,11 @@ func (a *App) GetState() AppState {
 		}
 	}
 
+	latestHistory := a.history
+	if len(latestHistory) > 50 {
+		latestHistory = latestHistory[:50]
+	}
+
 	return AppState{
 		CurrentMedia:     a.currentMedia,
 		CurrentMatch:     a.currentMatch,
@@ -506,13 +551,65 @@ func (a *App) GetState() AppState {
 		ActiveTopics:     a.activeTopics,
 		SyncStatus:       a.syncStatus,
 		TotalPersons:     len(a.matcher.GetPersons()),
-		History:          a.history,
+		History:          latestHistory,
 		LastSync:         lastSyncStr,
 		Rules:            a.rulesMgr.GetSnapshot(),
 		Config:           a.cfg,
 		Stats:            a.stats,
 		SnoozedList:      snoozed,
 	}
+}
+
+// GetHistory returns paginated and filtered history items.
+func (a *App) GetHistory(limit, offset int, action, search string) ([]models.HistoryItem, int) {
+	if a.historyMgr != nil {
+		return a.historyMgr.GetItems(limit, offset, action, search)
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.history, len(a.history)
+}
+
+// GetHistoryStats returns aggregated statistics from history manager.
+func (a *App) GetHistoryStats() history.Stats {
+	if a.historyMgr != nil {
+		return a.historyMgr.GetStats()
+	}
+	return history.Stats{}
+}
+
+// ClearHistory wipes all history records and resets statistics.
+func (a *App) ClearHistory() error {
+	a.mu.Lock()
+	a.history = make([]models.HistoryItem, 0)
+	a.stats = AppStats{
+		TopPersons: make(map[string]int),
+	}
+	a.mu.Unlock()
+
+	if a.historyMgr != nil {
+		if err := a.historyMgr.Clear(); err != nil {
+			return err
+		}
+	}
+	a.notifyStateChanged()
+	return nil
+}
+
+// ExportHistoryCSV returns CSV bytes of all history records with UTF-8 BOM.
+func (a *App) ExportHistoryCSV() ([]byte, error) {
+	if a.historyMgr != nil {
+		return a.historyMgr.ExportCSV()
+	}
+	return nil, fmt.Errorf("geçmiş yöneticisi aktif değil")
+}
+
+// ExportHistoryJSON returns JSON bytes of all history records and stats.
+func (a *App) ExportHistoryJSON() ([]byte, error) {
+	if a.historyMgr != nil {
+		return a.historyMgr.ExportJSON()
+	}
+	return nil, fmt.Errorf("geçmiş yöneticisi aktif değil")
 }
 
 // GetConfig returns current configuration.
@@ -523,6 +620,7 @@ func (a *App) GetConfig() *config.Config {
 }
 
 func (a *App) saveConfigLocked() {
+
 	if a.cfg != nil && a.configPath != "" {
 		if err := config.Save(a.configPath, a.cfg); err != nil {
 			fmt.Printf("⚠️ config.json kaydedilemedi (%s): %v\n", a.configPath, err)

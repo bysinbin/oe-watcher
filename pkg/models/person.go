@@ -68,9 +68,14 @@ type MatchResult struct {
 
 // HistoryItem represents an event of track detection and user action.
 type HistoryItem struct {
-	ID        string      `json:"id"`
-	Timestamp string      `json:"timestamp"`
-	Track     MediaInfo   `json:"track"`
-	Person    Person      `json:"person"`
-	Action    string      `json:"action"` // "skipped", "kept", "auto_skipped", "pending"
+	ID          string    `json:"id"`
+	Timestamp   string    `json:"timestamp"`
+	Track       MediaInfo `json:"track"`
+	Person      Person    `json:"person"`
+	Category    string    `json:"category,omitempty"`
+	Topics      []string  `json:"topics,omitempty"`
+	Action      string    `json:"action"` // "skipped", "kept", "auto_skipped", "manual_skip", "snoozed", "skip_failed", "pending"
+	ActionLabel string    `json:"action_label,omitempty"`
+	Success     bool      `json:"success"`
 }
+
