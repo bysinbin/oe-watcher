@@ -126,8 +126,8 @@ func TestMatcherCustomPersonAndAlias(t *testing.T) {
 	tempDir := t.TempDir()
 	rm := rules.NewManager(tempDir)
 
-	// Add custom person: Bayhan
-	_, err := rm.AddPerson("Bayhan", []string{"Şarkıcı"}, []string{"Özel"}, []string{"Bayhan Gürhan"})
+	// Add custom person: Ersin Koç
+	_, err := rm.AddPerson("Ersin Koç", []string{"Şarkıcı"}, []string{"Özel"}, []string{"Ersin Koç"})
 	if err != nil {
 		t.Fatalf("Failed to add custom person: %v", err)
 	}
@@ -142,17 +142,17 @@ func TestMatcherCustomPersonAndAlias(t *testing.T) {
 	m.SetRulesManager(rm)
 
 	// 1. Test custom person match
-	trackBayhan := models.MediaInfo{
+	trackErsin := models.MediaInfo{
 		App:    "YouTube Music",
-		Artist: "Bayhan",
-		Title:  "Merdo",
+		Artist: "Ersin Koç",
+		Title:  "Şarkı",
 	}
-	res1 := m.Match(trackBayhan)
+	res1 := m.Match(trackErsin)
 	if res1 == nil {
-		t.Fatalf("Expected match for custom person Bayhan, got nil")
+		t.Fatalf("Expected match for custom person Ersin Koç, got nil")
 	}
-	if !strings.Contains(res1.Person.DisplayName, "Bayhan") {
-		t.Errorf("Expected Bayhan, got %s", res1.Person.DisplayName)
+	if !strings.Contains(res1.Person.DisplayName, "Ersin Koç") {
+		t.Errorf("Expected Ersin Koç, got %s", res1.Person.DisplayName)
 	}
 
 	// 2. Test alias match

@@ -47,6 +47,21 @@
     'li[data-id]'
   ];
 
+  // Helper to attach rock-solid click/tap handling that stops host page event stealing
+  function attachSafeAction(btn, actionFn) {
+    if (!btn) return;
+    ['pointerdown', 'mousedown', 'click'].forEach(evtName => {
+      btn.addEventListener(evtName, (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (evtName === 'click') {
+          e.preventDefault();
+          actionFn(e);
+        }
+      }, true);
+    });
+  }
+
   // Turkish character folding for accurate case-insensitive matching
   function foldTurkish(str) {
     if (!str) return '';
@@ -114,7 +129,6 @@
         if (folded.length < 3 || excludeSet.has(folded)) continue;
 
         const escaped = folded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // Word boundary: matches when surrounded by non-alphanumeric or edges
         const regex = new RegExp(`(?:^|[^a-zçğıöşü0-9])${escaped}(?:$|[^a-zçğıöşü0-9])`, 'i');
 
         compiledMatchers.push({
@@ -172,7 +186,9 @@
 
   // Apply shield directly inside container as an overlay without disturbing virtual scrollers
   function shieldElement(container, matchInfo) {
-    if (!container || container.hasAttribute('data-oe-shielded')) return;
+    if (!container || container.hasAttribute('data-oe-shielded') || container.hasAttribute('data-oe-revealed')) {
+      return;
+    }
     container.setAttribute('data-oe-shielded', 'true');
 
     // Ensure container has relative positioning context and minimum height for overlay
@@ -221,44 +237,53 @@
       </div>
     `;
 
-    // Action: "İçeriği Göster" (Temporarily unmask content)
+    // Action: "İçeriği Göster" (Unmask content completely and remove shield overlay)
     const btnReveal = banner.querySelector('.oe-btn-reveal');
-    btnReveal.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
+    function doReveal() {
+      container.setAttribute('data-oe-revealed', 'true');
+      container.removeAttribute('data-oe-shielded');
       container.classList.remove('oe-shielded-container');
       container.classList.add('oe-revealed-container');
-      banner.style.display = 'none';
 
+      container.style.minHeight = '';
+      container.style.color = '';
+      container.style.textShadow = '';
+
+      banner.remove();
+
+      // Non-intrusive re-hide button in corner
       const revertTag = document.createElement('div');
       revertTag.className = 'oe-revert-tag';
       revertTag.innerHTML = `
         <span>⚠️ [${escapeHTML(matchInfo.displayName)}] Gösterildi</span>
         <button type="button" class="oe-btn-rehide">Yeniden Gizle</button>
       `;
-      revertTag.querySelector('.oe-btn-rehide').addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        ev.preventDefault();
-        container.classList.add('oe-shielded-container');
-        container.classList.remove('oe-revealed-container');
-        banner.style.display = 'flex';
+      const rehideBtn = revertTag.querySelector('.oe-btn-rehide');
+      attachSafeAction(rehideBtn, () => {
         revertTag.remove();
+        container.removeAttribute('data-oe-revealed');
+        container.classList.remove('oe-revealed-container');
+        shieldElement(container, matchInfo);
       });
 
       container.appendChild(revertTag);
-    });
+    }
+    attachSafeAction(btnReveal, doReveal);
 
     // Action: "Gizli Tut" (Cleanly collapse container into a thin bar without breaking scroller heights)
     const btnDismiss = banner.querySelector('.oe-btn-dismiss');
-    btnDismiss.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
+    function doDismiss() {
+      container.setAttribute('data-oe-dismissed', 'true');
+      container.classList.remove('oe-shielded-container');
+      container.classList.add('oe-dismissed-container');
       container.style.minHeight = '36px';
       container.style.maxHeight = '36px';
       container.style.height = '36px';
       container.style.overflow = 'hidden';
+
+      banner.className = 'oe-shield-banner oe-dismissed-banner';
       banner.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; height: 100%;">
           <span style="font-size: 0.78rem; color: #94a3b8; font-weight: 500;">
             🛡️ [${escapeHTML(matchInfo.displayName)}] gizlendi.
           </span>
@@ -267,16 +292,18 @@
           </button>
         </div>
       `;
-      banner.querySelector('.oe-btn-reveal').addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        ev.preventDefault();
+      const unhideBtn = banner.querySelector('.oe-btn-reveal');
+      attachSafeAction(unhideBtn, () => {
+        container.removeAttribute('data-oe-dismissed');
+        container.classList.remove('oe-dismissed-container');
         container.style.minHeight = '';
         container.style.maxHeight = '';
         container.style.height = '';
-        container.classList.remove('oe-shielded-container');
-        banner.remove();
+        container.style.overflow = '';
+        doReveal();
       });
-    });
+    }
+    attachSafeAction(btnDismiss, doDismiss);
 
     // Append banner inside container as an absolute overlay
     container.appendChild(banner);
@@ -296,7 +323,12 @@
       for (const m of compiledMatchers) {
         if (m.regex.test(folded)) {
           const container = findBlockContainer(elem);
-          if (container && !container.hasAttribute('data-oe-shielded') && !containersToShield.has(container)) {
+          if (
+            container &&
+            !container.hasAttribute('data-oe-shielded') &&
+            !container.hasAttribute('data-oe-revealed') &&
+            !containersToShield.has(container)
+          ) {
             containersToShield.set(container, m);
           }
           break;
@@ -309,7 +341,14 @@
     const attrNodes = (rootNode === document.body ? document : rootNode).querySelectorAll(attrSelector);
     for (let i = 0; i < attrNodes.length; i++) {
       const el = attrNodes[i];
-      if (el.closest('.oe-shield-banner') || el.closest('.oe-revert-tag') || el.closest('[data-oe-shielded]')) continue;
+      if (
+        el.closest('.oe-shield-banner') ||
+        el.closest('.oe-revert-tag') ||
+        el.closest('[data-oe-shielded]') ||
+        el.closest('[data-oe-revealed]')
+      ) {
+        continue;
+      }
 
       const title = el.getAttribute('title');
       if (title) checkCandidate(title, el);
@@ -337,7 +376,8 @@
             tag === 'input' ||
             parent.closest('.oe-shield-banner') ||
             parent.closest('.oe-revert-tag') ||
-            parent.closest('[data-oe-shielded]')
+            parent.closest('[data-oe-shielded]') ||
+            parent.closest('[data-oe-revealed]')
           ) {
             return NodeFilter.FILTER_REJECT;
           }
