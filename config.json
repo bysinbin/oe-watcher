@@ -3,7 +3,7 @@
   "web_port": 8080,
   "bind_address": "127.0.0.1",
   "web_password": "admin",
-  "auto_skip": false,
+  "auto_skip": true,
   "enable_dialog": true,
   "poll_interval_ms": 1500,
   "category": "HEPSİ",

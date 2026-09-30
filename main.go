@@ -61,11 +61,17 @@ func main() {
 	fmt.Print(banner)
 
 	// Load configuration from config.json
-	cfg, loadedConfigPath, err := config.LoadOrCreate(*configPath)
+	resolvedConfig, resolvedDataDir := config.LocateConfigAndData(*configPath)
+	cfg, loadedConfigPath, err := config.LoadOrCreate(resolvedConfig)
 	if err != nil {
 		fmt.Printf("⚠️ Config yüklenirken uyarı: %v (varsayılan ayarlar kullanılacak)\n", err)
 	} else {
 		fmt.Printf("⚙️ Yapılandırma: \033[1;36m%s\033[0m yüklendi.\n", loadedConfigPath)
+	}
+
+	// Change working directory to config directory so relative paths work seamlessly
+	if configDir := filepath.Dir(loadedConfigPath); configDir != "" && configDir != "/" {
+		_ = os.Chdir(configDir)
 	}
 
 	// Override config with CLI flags if explicitly passed
@@ -80,7 +86,7 @@ func main() {
 		}
 	})
 
-	application := app.NewAppWithConfig(cfg, loadedConfigPath, "data")
+	application := app.NewAppWithConfig(cfg, loadedConfigPath, resolvedDataDir)
 
 	fmt.Println("⏳ OE List API veritabanı hazırlanıyor...")
 	if err := application.Init(*syncFlag); err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -42,66 +43,124 @@ func DefaultConfig() *Config {
 	}
 }
 
-// LoadOrCreate loads config from config.json (checks root or data directory).
-// If not found, creates a default config.json in root.
-func LoadOrCreate(customPath string) (*Config, string, error) {
-	candidates := []string{}
-	targetPath := ConfigFileName
-
+// LocateConfigAndData reliably discovers the appropriate config.json path and data directory,
+// even when launched from macOS Finder / Cocoa .app bundle where working directory is "/".
+func LocateConfigAndData(customPath string) (string, string) {
 	if customPath != "" {
-		candidates = append(candidates, customPath)
-		targetPath = customPath
-	} else {
+		abs, err := filepath.Abs(customPath)
+		if err == nil {
+			return abs, filepath.Join(filepath.Dir(abs), "data")
+		}
+		return customPath, filepath.Join(filepath.Dir(customPath), "data")
+	}
+
+	candidates := []string{}
+
+	// 1. Current working directory (if not root "/")
+	cwd, err := os.Getwd()
+	if err == nil && cwd != "" && cwd != "/" {
 		candidates = append(candidates,
-			ConfigFileName,
-			filepath.Join("data", ConfigFileName),
+			filepath.Join(cwd, ConfigFileName),
+			filepath.Join(cwd, "data", ConfigFileName),
 		)
 	}
 
-	for _, path := range candidates {
-		data, err := os.ReadFile(path)
-		if err == nil {
-			cfg := DefaultConfig()
-			if err := json.Unmarshal(data, cfg); err == nil {
-				// Ensure defaults for empty fields
-				if cfg.ApiURL == "" {
-					cfg.ApiURL = DefaultApiURL
-				}
-				if cfg.WebPort <= 0 {
-					cfg.WebPort = 8080
-				}
-				if cfg.BindAddress == "" {
-					cfg.BindAddress = "127.0.0.1"
-				}
-				if cfg.PollIntervalMs <= 0 {
-					cfg.PollIntervalMs = 1500
-				}
-				if cfg.Category == "" {
-					cfg.Category = "HEPSİ"
-				}
-				if cfg.FuzzyThreshold <= 0 || cfg.FuzzyThreshold > 1.0 {
-					cfg.FuzzyThreshold = 0.85
-				}
-				absPath, err := filepath.Abs(path)
-				if err == nil {
-					return cfg, absPath, nil
-				}
-				return cfg, path, nil
-			}
+	// 2. Binary location / macOS App Bundle location
+	exe, err := os.Executable()
+	if err == nil && exe != "" {
+		exeDir := filepath.Dir(exe)
+		if strings.Contains(exe, ".app/Contents/MacOS") {
+			bundleDir := filepath.Dir(filepath.Dir(exeDir)) // e.g. .../OE Watcher.app
+			parentDir := filepath.Dir(bundleDir)            // e.g. .../dist
+			grandParent := filepath.Dir(parentDir)         // e.g. .../medya-filter (workspace root)
+			candidates = append(candidates,
+				filepath.Join(grandParent, ConfigFileName),
+				filepath.Join(parentDir, ConfigFileName),
+				filepath.Join(bundleDir, "Contents", "Resources", ConfigFileName),
+			)
+		} else {
+			candidates = append(candidates,
+				filepath.Join(exeDir, ConfigFileName),
+				filepath.Join(exeDir, "data", ConfigFileName),
+			)
 		}
 	}
 
-	// Create new config file at targetPath
-	cfg := DefaultConfig()
-	absTarget, err := filepath.Abs(targetPath)
-	if err == nil {
-		targetPath = absTarget
-	}
-	if err := Save(targetPath, cfg); err != nil {
-		return cfg, targetPath, fmt.Errorf("config oluşturulamadı: %w", err)
+	// 3. User standard Application Support directory
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		appSupportDir := filepath.Join(home, "Library", "Application Support", "OEWatcher")
+		candidates = append(candidates, filepath.Join(appSupportDir, ConfigFileName))
 	}
 
-	return cfg, targetPath, nil
+	// Check if any candidate already exists on disk
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			abs, err := filepath.Abs(c)
+			if err == nil {
+				return abs, filepath.Join(filepath.Dir(abs), "data")
+			}
+			return c, filepath.Join(filepath.Dir(c), "data")
+		}
+	}
+
+	// If none exist yet, pick the first valid non-root candidate
+	for _, c := range candidates {
+		dir := filepath.Dir(c)
+		if dir != "/" && dir != "" {
+			abs, err := filepath.Abs(c)
+			if err == nil {
+				return abs, filepath.Join(filepath.Dir(abs), "data")
+			}
+			return c, filepath.Join(filepath.Dir(c), "data")
+		}
+	}
+
+	// Fallback to Application Support
+	fallbackDir := filepath.Join(home, "Library", "Application Support", "OEWatcher")
+	fallbackPath := filepath.Join(fallbackDir, ConfigFileName)
+	return fallbackPath, filepath.Join(fallbackDir, "data")
+}
+
+// LoadOrCreate loads config from config.json (checks root or data directory).
+// If not found, creates a default config.json.
+func LoadOrCreate(customPath string) (*Config, string, error) {
+	configPath, _ := LocateConfigAndData(customPath)
+
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		cfg := DefaultConfig()
+		if err := json.Unmarshal(data, cfg); err == nil {
+			// Ensure defaults for empty fields
+			if cfg.ApiURL == "" {
+				cfg.ApiURL = DefaultApiURL
+			}
+			if cfg.WebPort <= 0 {
+				cfg.WebPort = 8080
+			}
+			if cfg.BindAddress == "" {
+				cfg.BindAddress = "127.0.0.1"
+			}
+			if cfg.PollIntervalMs <= 0 {
+				cfg.PollIntervalMs = 1500
+			}
+			if cfg.Category == "" {
+				cfg.Category = "HEPSİ"
+			}
+			if cfg.FuzzyThreshold <= 0 || cfg.FuzzyThreshold > 1.0 {
+				cfg.FuzzyThreshold = 0.85
+			}
+			return cfg, configPath, nil
+		}
+	}
+
+	// Create new config file at configPath
+	cfg := DefaultConfig()
+	if err := Save(configPath, cfg); err != nil {
+		return cfg, configPath, fmt.Errorf("config oluşturulamadı (%s): %w", configPath, err)
+	}
+
+	return cfg, configPath, nil
 }
 
 // Save writes config to target path with nice indentation.

@@ -561,20 +561,47 @@ func (a *App) UpdateConfig(newCfg *config.Config) error {
 
 	a.saveConfigLocked()
 	go a.notifyStateChanged()
+
+	if newCfg.AutoSkip && a.currentMatch != nil && (a.currentMedia.State == "playing" || a.currentMedia.State == "paused") {
+		curMatch := a.currentMatch
+		curTrack := a.currentMedia
+		if !a.IsSnoozed(curMatch.Person.DisplayName) {
+			go func() {
+				fmt.Printf("⏩ [Auto-Skip Aktif Edildi] Kara listedeki '%s' hemen geçiliyor...\n", curMatch.Person.DisplayName)
+				_ = a.SkipCurrent()
+				notifier.ShowNotification("⏩ Şarkı Otomatik Geçildi", curMatch.Person.DisplayName, curTrack.Title)
+			}()
+		}
+	}
+
 	return nil
 }
 
 // SetAutoSkip updates auto-skip preference and persists to config.
 func (a *App) SetAutoSkip(val bool) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.autoSkip = val
 	tray.SetAutoSkipState(val)
 	if a.cfg != nil {
 		a.cfg.AutoSkip = val
 		a.saveConfigLocked()
 	}
+	curMatch := a.currentMatch
+	curTrack := a.currentMedia
+	a.mu.Unlock()
+
 	go a.notifyStateChanged()
+
+	// If auto_skip was turned ON and there is currently a matching track playing, skip it immediately!
+	if val && curMatch != nil && (curTrack.State == "playing" || curTrack.State == "paused") {
+		if !a.IsSnoozed(curMatch.Person.DisplayName) {
+			go func() {
+				fmt.Printf("⏩ [Auto-Skip Aktif Edildi] Kara listedeki '%s' hemen geçiliyor...\n", curMatch.Person.DisplayName)
+				_ = a.SkipCurrent()
+				notifier.ShowNotification("⏩ Şarkı Otomatik Geçildi", curMatch.Person.DisplayName, curTrack.Title)
+			}()
+		}
+	}
 }
 
 // SetEnableDialog updates dialog preference and persists to config.

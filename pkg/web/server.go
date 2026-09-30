@@ -372,16 +372,18 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		s.app.SetFuzzy(fm, *req.FuzzyThreshold)
 	}
 
-	state := s.app.GetState()
-	cats := state.ActiveCategories
-	topics := state.ActiveTopics
-	if req.ActiveCategories != nil {
-		cats = req.ActiveCategories
+	if req.ActiveCategories != nil || req.ActiveTopics != nil {
+		state := s.app.GetState()
+		cats := state.ActiveCategories
+		topics := state.ActiveTopics
+		if req.ActiveCategories != nil {
+			cats = req.ActiveCategories
+		}
+		if req.ActiveTopics != nil {
+			topics = req.ActiveTopics
+		}
+		s.app.SetFilters(cats, topics)
 	}
-	if req.ActiveTopics != nil {
-		topics = req.ActiveTopics
-	}
-	s.app.SetFilters(cats, topics)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(s.app.GetState())
