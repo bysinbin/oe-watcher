@@ -31,6 +31,7 @@
   },
   "exclude_list": [
     "Beşiktaş JK",
-    "https://github.com/bysinbin/oe-watcher"
+    "https://github.com/bysinbin/oe-watcher",
+    "http://localhost:8080/"
   ]
 }
