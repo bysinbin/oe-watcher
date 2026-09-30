@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	"medya-filter/pkg/app"
+	"medya-filter/pkg/config"
 	"medya-filter/pkg/models"
 	"medya-filter/pkg/permission"
+	"medya-filter/pkg/tray"
 	"medya-filter/pkg/web"
 )
 
@@ -30,26 +33,44 @@ const banner = `
 `
 
 func main() {
-	autoSkip := flag.Bool("auto-skip", false, "Onay sormadan kara listedeki şarkıları otomatik geç")
-	noDialog := flag.Bool("no-dialog", false, "macOS masaüstü onay penceresini devre dışı bırak")
+	runtime.LockOSThread()
+
+	configPath := flag.String("config", "", "config.json dosya yolu (varsayılan: ./config.json)")
+	cliMode := flag.Bool("cli", false, "macOS Menü Çubuğu (Tray) olmadan sadece terminal konsol modunda çalıştır")
+	autoSkipFlag := flag.Bool("auto-skip", false, "Onay sormadan kara listedeki şarkıları otomatik geç")
+	noDialogFlag := flag.Bool("no-dialog", false, "macOS masaüstü onay penceresini devre dışı bırak")
 	noWeb := flag.Bool("no-web", false, "Web kontrol panelini devre dışı bırak")
-	port := flag.Int("port", 8080, "Web kontrol paneli portu")
-	interval := flag.Duration("interval", 1500*time.Millisecond, "Medya kontrol sıklığı")
-	category := flag.String("category", "HEPSİ", "Filtrelenecek kategori (örn: Şarkıcı, Oyuncu)")
-	forceSync := flag.Bool("sync", false, "Başlangıçta API ile tam senkronizasyon yap")
+	portFlag := flag.Int("port", 0, "Web kontrol paneli portu (config.json değerini ezer)")
+	syncFlag := flag.Bool("sync", false, "Başlangıçta API ile tam senkronizasyon yap")
 	testArtist := flag.String("test", "", "Bir sanatçı veya şarkı adını test et ve çık (örn: -test 'Ahmet Kaya')")
 	flag.Parse()
 
 	fmt.Print(banner)
 
-	application := app.NewApp("data", *autoSkip, !*noDialog, *interval)
-
-	if *category != "" && *category != "HEPSİ" {
-		application.SetFilters([]string{*category}, []string{"TÜM KONULAR"})
+	// Load configuration from config.json
+	cfg, loadedConfigPath, err := config.LoadOrCreate(*configPath)
+	if err != nil {
+		fmt.Printf("⚠️ Config yüklenirken uyarı: %v (varsayılan ayarlar kullanılacak)\n", err)
+	} else {
+		fmt.Printf("⚙️ Yapılandırma: \033[1;36m%s\033[0m yüklendi.\n", loadedConfigPath)
 	}
 
+	// Override config with CLI flags if explicitly passed
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "auto-skip":
+			cfg.AutoSkip = *autoSkipFlag
+		case "no-dialog":
+			cfg.EnableDialog = !*noDialogFlag
+		case "port":
+			cfg.WebPort = *portFlag
+		}
+	})
+
+	application := app.NewAppWithConfig(cfg, loadedConfigPath, "data")
+
 	fmt.Println("⏳ OE List API veritabanı hazırlanıyor...")
-	if err := application.Init(*forceSync); err != nil {
+	if err := application.Init(*syncFlag); err != nil {
 		fmt.Printf("⚠️ Uyarı: Veritabanı başlatılırken hata oluştu: %v\n", err)
 	}
 
@@ -70,9 +91,15 @@ func main() {
 
 	// Web Dashboard server
 	if !*noWeb {
-		server := web.NewServer(application, *port)
+		server := web.NewServer(application, cfg.WebPort)
 		go func() {
-			fmt.Printf("🌐 Web Kontrol Paneli: \033[1;36mhttp://localhost:%d\033[0m\n", *port)
+			fmt.Printf("🌐 Web Kontrol Paneli: \033[1;36mhttp://%s:%d\033[0m\n", cfg.BindAddress, cfg.WebPort)
+			if cfg.WebPassword != "" {
+				fmt.Printf("🔒 Web Paneli Güvenliği: \033[1;33mParola Korumalı\033[0m (Varsayılan şifre config.json 'web_password' alanındadır)\n")
+			}
+			if cfg.BindAddress == "127.0.0.1" {
+				fmt.Printf("🛡️ Ağ Koruması: Yalnızca bu bilgisayardan erişilebilir (127.0.0.1)\n")
+			}
 			if err := server.Start(); err != nil {
 				fmt.Printf("Web sunucu kapandı: %v\n", err)
 			}
@@ -81,27 +108,58 @@ func main() {
 
 	// Print operational modes
 	fmt.Println("--------------------------------------------------------------------")
-	if *autoSkip {
+	if cfg.AutoSkip {
 		fmt.Println("⚡ Mod: \033[1;31mOTOMATİK GEÇİŞ (Auto-Skip)\033[0m - Eşleşen şarkılar doğrudan geçilecek.")
 	} else {
 		fmt.Println("🔔 Mod: \033[1;33mONAYLI GEÇİŞ\033[0m - Eşleştiğinde macOS penceresi ile sorulacak.")
 	}
 	fmt.Printf("🎧 İzlenen Medyalar: Spotify, Apple Music, Google Chrome (YouTube), Safari\n")
-	fmt.Println("⏹️ Çıkış yapmak için Ctrl+C tuşlarına basabilirsiniz.")
 	fmt.Println("--------------------------------------------------------------------")
 
 	// Start media polling in background
 	go application.StartMonitoring(ctx)
 
-	// Wait for OS shutdown signals
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
+	if !*cliMode {
+		fmt.Println("🎧 Uygulama macOS Menü Çubuğuna (Bildirim Paneli) yerleşti.")
+		fmt.Println("💡 Üst menü çubuğundaki '🎧 OE' simgesinden paneli açabilir, şarkı geçebilir veya çıkış yapabilirsiniz.")
 
-	fmt.Println("\n🛑 Uygulama kapatılıyor...")
-	cancel()
-	time.Sleep(300 * time.Millisecond)
-	fmt.Println("👋 Görüşmek üzere!")
+		callbacks := tray.MenuCallbacks{
+			OnOpenWebPanel: func() {
+				tray.OpenURL(fmt.Sprintf("http://127.0.0.1:%d", cfg.WebPort))
+			},
+			OnSkipTrack: func() {
+				fmt.Println("⏩ Menü Çubuğundan şarkı geçme istendi.")
+				_ = application.SkipCurrent()
+			},
+			OnToggleAutoSkip: func() {
+				cur := application.GetState().AutoSkip
+				application.SetAutoSkip(!cur)
+				fmt.Printf("⚡ Otomatik Geçiş menüden değiştirildi: %v\n", !cur)
+			},
+			OnSyncAPI: func() {
+				fmt.Println("🔄 Menüden API senkronizasyonu başlatıldı...")
+				_ = application.Init(true)
+			},
+			OnQuit: func() {
+				fmt.Println("\n🛑 Menüden çıkış yapıldı...")
+				cancel()
+				os.Exit(0)
+			},
+		}
+
+		// Run Cocoa event loop on main OS thread
+		tray.StartTray(cfg.WebPort, cfg.AutoSkip, callbacks)
+	} else {
+		fmt.Println("⏹️ Konsol modunda çalışıyor. Çıkış yapmak için Ctrl+C tuşlarına basabilirsiniz.")
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		<-sigChan
+
+		fmt.Println("\n🛑 Uygulama kapatılıyor...")
+		cancel()
+		time.Sleep(300 * time.Millisecond)
+		fmt.Println("👋 Görüşmek üzere!")
+	}
 }
 
 func runTest(app *app.App, query string) {

@@ -43,6 +43,37 @@ document.addEventListener('DOMContentLoaded', () => {
   const personCountBadge = document.getElementById('personCountBadge');
   const historyList = document.getElementById('historyList');
 
+  // Login Overlay Elements
+  const loginOverlay = document.getElementById('loginOverlay');
+  const loginForm = document.getElementById('loginForm');
+  const loginPassword = document.getElementById('loginPassword');
+  const btnTogglePassword = document.getElementById('btnTogglePassword');
+  const loginErrorMsg = document.getElementById('loginErrorMsg');
+  const btnLogout = document.getElementById('btnLogout');
+
+  let authToken = localStorage.getItem('oe_auth_token') || '';
+  let authRequired = false;
+  let pollingTimer = null;
+
+  // Intercept fetch to automatically attach Bearer token and handle 401
+  const origFetch = window.fetch;
+  window.fetch = async (input, init = {}) => {
+    init.headers = init.headers || {};
+    const urlStr = typeof input === 'string' ? input : (input.url || '');
+    if (authToken && urlStr.includes('/api/')) {
+      if (init.headers instanceof Headers) {
+        if (!init.headers.has('Authorization')) init.headers.set('Authorization', 'Bearer ' + authToken);
+      } else if (!init.headers['Authorization']) {
+        init.headers['Authorization'] = 'Bearer ' + authToken;
+      }
+    }
+    const res = await origFetch(input, init);
+    if (res.status === 401 && !urlStr.includes('/api/auth-status') && !urlStr.includes('/api/login')) {
+      showLoginOverlay('Oturum süresi doldu veya şifre gerekli.');
+    }
+    return res;
+  };
+
   // Category & Topic Grids
   const categoriesGrid = document.getElementById('categoriesGrid');
   const topicsGrid = document.getElementById('topicsGrid');
@@ -51,10 +82,119 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFilterButtons();
   setupEventListeners();
   setupRulesManagement();
-  loadPersons();
-  loadRules();
-  pollStatus();
-  setInterval(pollStatus, 1500);
+  setupAuthHandlers();
+  checkAuthAndStart();
+
+  async function checkAuthAndStart() {
+    try {
+      const res = await apiFetch('/api/auth-status');
+      const data = await res.json();
+      authRequired = data.required;
+
+      if (authRequired) {
+        if (!data.authenticated) {
+          showLoginOverlay();
+          return;
+        }
+        if (btnLogout) btnLogout.style.display = 'inline-flex';
+      }
+
+      hideLoginOverlay();
+      startApp();
+    } catch (err) {
+      console.error('Auth check error:', err);
+      startApp();
+    }
+  }
+
+  function startApp() {
+    loadPersons();
+    loadRules();
+    pollStatus();
+    if (!pollingTimer) {
+      pollingTimer = setInterval(pollStatus, 1500);
+    }
+  }
+
+  function showLoginOverlay(msg) {
+    if (loginOverlay) {
+      loginOverlay.style.display = 'flex';
+      if (loginPassword) {
+        loginPassword.value = '';
+        setTimeout(() => loginPassword.focus(), 60);
+      }
+    }
+    if (loginErrorMsg) {
+      if (msg) {
+        loginErrorMsg.textContent = msg;
+        loginErrorMsg.style.display = 'block';
+      } else {
+        loginErrorMsg.style.display = 'none';
+      }
+    }
+    if (btnLogout) btnLogout.style.display = 'none';
+    if (pollingTimer) {
+      clearInterval(pollingTimer);
+      pollingTimer = null;
+    }
+  }
+
+  function hideLoginOverlay() {
+    if (loginOverlay) loginOverlay.style.display = 'none';
+    if (loginErrorMsg) loginErrorMsg.style.display = 'none';
+    if (authRequired && btnLogout) btnLogout.style.display = 'inline-flex';
+  }
+
+  function setupAuthHandlers() {
+    if (loginForm) {
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pwd = loginPassword.value;
+        try {
+          const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pwd })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            authToken = data.token || '';
+            localStorage.setItem('oe_auth_token', authToken);
+            hideLoginOverlay();
+            showToast('🔒 Giriş başarılı!');
+            startApp();
+          } else {
+            loginErrorMsg.textContent = data.error || 'Hatalı parola!';
+            loginErrorMsg.style.display = 'block';
+            loginPassword.select();
+          }
+        } catch (err) {
+          loginErrorMsg.textContent = 'Bağlantı hatası: ' + err.message;
+          loginErrorMsg.style.display = 'block';
+        }
+      });
+    }
+
+    if (btnTogglePassword && loginPassword) {
+      btnTogglePassword.addEventListener('click', () => {
+        const isPwd = loginPassword.getAttribute('type') === 'password';
+        loginPassword.setAttribute('type', isPwd ? 'text' : 'password');
+        btnTogglePassword.textContent = isPwd ? '🔒' : '👁️';
+      });
+    }
+
+    if (btnLogout) {
+      btnLogout.addEventListener('click', async () => {
+        try {
+          await apiFetch('/api/logout', { method: 'POST' });
+        } catch (err) {}
+        authToken = '';
+        localStorage.removeItem('oe_auth_token');
+        showToast('Oturum kapatıldı.');
+        showLoginOverlay();
+      });
+    }
+  }
 
   function setupFilterButtons() {
     // Category Buttons

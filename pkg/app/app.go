@@ -8,15 +8,19 @@ import (
 	"time"
 
 	"medya-filter/pkg/api"
+	"medya-filter/pkg/config"
 	"medya-filter/pkg/matcher"
 	"medya-filter/pkg/media"
 	"medya-filter/pkg/models"
 	"medya-filter/pkg/notifier"
 	"medya-filter/pkg/rules"
+	"medya-filter/pkg/tray"
 )
 
 type App struct {
 	mu                  sync.RWMutex
+	cfg                 *config.Config
+	configPath          string
 	client              *api.Client
 	rulesMgr            *rules.Manager
 	matcher             *matcher.Matcher
@@ -33,27 +37,51 @@ type App struct {
 	lastSyncTime        time.Time
 }
 
-func NewApp(dataDir string, autoSkip, enableDialog bool, pollInterval time.Duration) *App {
-	if pollInterval <= 0 {
-		pollInterval = 1500 * time.Millisecond
+func NewAppWithConfig(cfg *config.Config, configPath, dataDir string) *App {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	if dataDir == "" {
+		dataDir = "data"
+	}
+	interval := time.Duration(cfg.PollIntervalMs) * time.Millisecond
+	if interval <= 0 {
+		interval = 1500 * time.Millisecond
 	}
 
 	rulesMgr := rules.NewManager(dataDir)
 	m := matcher.NewMatcher(nil)
 	m.SetRulesManager(rulesMgr)
 
+	cats := []string{"HEPSİ"}
+	if cfg.Category != "" && cfg.Category != "HEPSİ" {
+		cats = []string{cfg.Category}
+	}
+
 	return &App{
-		client:           api.NewClient(dataDir),
+		cfg:              cfg,
+		configPath:       configPath,
+		client:           api.NewClient(cfg.ApiURL, dataDir),
 		rulesMgr:         rulesMgr,
 		matcher:          m,
-		autoSkip:         autoSkip,
-		enableDialog:     enableDialog,
-		pollInterval:     pollInterval,
+		autoSkip:         cfg.AutoSkip,
+		enableDialog:     cfg.EnableDialog,
+		pollInterval:     interval,
 		history:          make([]models.HistoryItem, 0),
-		activeCategories: []string{"HEPSİ"},
+		activeCategories: cats,
 		activeTopics:     []string{"TÜM KONULAR"},
 		syncStatus:       "Başlatılıyor...",
 	}
+}
+
+func NewApp(dataDir string, autoSkip, enableDialog bool, pollInterval time.Duration) *App {
+	cfg := config.DefaultConfig()
+	cfg.AutoSkip = autoSkip
+	cfg.EnableDialog = enableDialog
+	if pollInterval > 0 {
+		cfg.PollIntervalMs = int(pollInterval / time.Millisecond)
+	}
+	return NewAppWithConfig(cfg, "", dataDir)
 }
 
 // Init loads or synchronizes the person database.
@@ -141,9 +169,13 @@ func (a *App) pollOnce() {
 	a.mu.Unlock()
 
 	if matchedResult != nil {
+		tray.SetTrack(primaryTrack.Artist, primaryTrack.Title, true)
 		a.handleMatchDetected(matchedResult, matchedTrack, autoSkipMode, dialogMode)
 	} else if primaryTrack.Artist != "" || primaryTrack.Title != "" {
+		tray.SetTrack(primaryTrack.Artist, primaryTrack.Title, false)
 		fmt.Printf("\033[90m[Medya Değişti]\033[0m %s: %s - %s \033[32m(Eşleşme Yok)\033[0m\n", primaryTrack.App, primaryTrack.Artist, primaryTrack.Title)
+	} else {
+		tray.SetTrack("", "", false)
 	}
 }
 
@@ -288,11 +320,23 @@ func (a *App) GetState() AppState {
 	}
 }
 
-// SetAutoSkip updates auto-skip preference.
+// GetConfig returns current configuration.
+func (a *App) GetConfig() *config.Config {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.cfg
+}
+
+// SetAutoSkip updates auto-skip preference and persists to config.
 func (a *App) SetAutoSkip(val bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.autoSkip = val
+	tray.SetAutoSkipState(val)
+	if a.cfg != nil && a.configPath != "" {
+		a.cfg.AutoSkip = val
+		_ = config.Save(a.configPath, a.cfg)
+	}
 }
 
 // SetFilters updates allowed categories and topics.

@@ -32,8 +32,40 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
           <span id="btnSyncText">API Senkronize Et</span>
         </button>
+        <button id="btnLogout" class="btn btn-secondary btn-logout" style="display: none;" title="Güvenli Çıkış Yap">
+          <span>🔒 Çıkış</span>
+        </button>
       </div>
     </header>
+
+    <!-- Cyberpunk Password Lock Screen Overlay -->
+    <div id="loginOverlay" class="login-overlay" style="display: none;">
+      <div class="login-card">
+        <div class="login-badge">
+          <span class="lock-icon">🔒</span>
+          <span>GÜVENLİ ERİŞİM //</span>
+        </div>
+        <h2>OE LIST KONTROL PANELİ</h2>
+        <p class="login-subtitle">Bu panel parola korumalıdır. Devam etmek için <code>config.json</code> dosyasında tanımlanan şifreyi girin.</p>
+        
+        <form id="loginForm" class="login-form">
+          <div class="login-input-wrapper">
+            <input type="password" id="loginPassword" placeholder="Parolanızı girin..." autofocus required autocomplete="current-password">
+            <button type="button" id="btnTogglePassword" class="btn-toggle-pwd" title="Şifreyi Göster/Gizle">👁️</button>
+          </div>
+          <div id="loginErrorMsg" class="login-error" style="display: none;"></div>
+          <button type="submit" class="btn btn-danger btn-login">
+            <span>Giriş Yap</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </button>
+        </form>
+
+        <div class="login-footer">
+          <span>🛡️ Ağ Koruması: Etkin (127.0.0.1)</span>
+          <span class="hint-muted">Parola config.json dosyasından ayarlanabilir.</span>
+        </div>
+      </div>
+    </div>
 
     <main class="main-content">
       <!-- Left Column: Now Playing & Match Alert & Person Explorer -->

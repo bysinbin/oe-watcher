@@ -34,14 +34,17 @@ type AuthResponse struct {
 	Token string `json:"token"`
 }
 
-func NewClient(dataDir string) *Client {
+func NewClient(baseURL, dataDir string) *Client {
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
+	}
 	if dataDir == "" {
 		dataDir = "data"
 	}
 	_ = os.MkdirAll(dataDir, 0755)
 
 	return &Client{
-		BaseURL: DefaultBaseURL,
+		BaseURL: baseURL,
 		DataDir: dataDir,
 		HTTPClient: &http.Client{
 			Timeout: 25 * time.Second,

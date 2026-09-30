@@ -1,12 +1,16 @@
 package web
 
 import (
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"medya-filter/pkg/app"
 	"medya-filter/pkg/models"
@@ -16,33 +20,57 @@ import (
 var staticFS embed.FS
 
 type Server struct {
-	app  *app.App
-	port int
+	app         *app.App
+	bindAddress string
+	port        int
+	password    string
+	sessionMu   sync.RWMutex
+	sessions    map[string]time.Time
 }
 
 func NewServer(app *app.App, port int) *Server {
+	bindAddr := "127.0.0.1"
+	password := ""
+	if cfg := app.GetConfig(); cfg != nil {
+		if cfg.BindAddress != "" {
+			bindAddr = cfg.BindAddress
+		}
+		if port <= 0 && cfg.WebPort > 0 {
+			port = cfg.WebPort
+		}
+		password = cfg.WebPassword
+	}
 	if port <= 0 {
 		port = 8080
 	}
+
 	return &Server{
-		app:  app,
-		port: port,
+		app:         app,
+		bindAddress: bindAddr,
+		port:        port,
+		password:    password,
+		sessions:    make(map[string]time.Time),
 	}
 }
 
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	// API endpoints
-	mux.HandleFunc("/api/status", s.handleStatus)
-	mux.HandleFunc("/api/skip", s.handleSkip)
-	mux.HandleFunc("/api/settings", s.handleSettings)
-	mux.HandleFunc("/api/sync", s.handleSync)
-	mux.HandleFunc("/api/persons", s.handlePersons)
-	mux.HandleFunc("/api/rules", s.handleRules)
-	mux.HandleFunc("/api/rules/person", s.handleRulePerson)
-	mux.HandleFunc("/api/rules/alias", s.handleRuleAlias)
-	mux.HandleFunc("/api/rules/exclude", s.handleRuleExclude)
+	// Public Auth endpoints
+	mux.HandleFunc("/api/auth-status", s.handleAuthStatus)
+	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/logout", s.handleLogout)
+
+	// Protected API endpoints
+	mux.HandleFunc("/api/status", s.authMiddleware(s.handleStatus))
+	mux.HandleFunc("/api/skip", s.authMiddleware(s.handleSkip))
+	mux.HandleFunc("/api/settings", s.authMiddleware(s.handleSettings))
+	mux.HandleFunc("/api/sync", s.authMiddleware(s.handleSync))
+	mux.HandleFunc("/api/persons", s.authMiddleware(s.handlePersons))
+	mux.HandleFunc("/api/rules", s.authMiddleware(s.handleRules))
+	mux.HandleFunc("/api/rules/person", s.authMiddleware(s.handleRulePerson))
+	mux.HandleFunc("/api/rules/alias", s.authMiddleware(s.handleRuleAlias))
+	mux.HandleFunc("/api/rules/exclude", s.authMiddleware(s.handleRuleExclude))
 
 	// Embedded Static files
 	staticSub, err := fs.Sub(staticFS, "static")
@@ -52,8 +80,138 @@ func (s *Server) Start() error {
 	fileServer := http.FileServer(http.FS(staticSub))
 	mux.Handle("/", fileServer)
 
-	addr := fmt.Sprintf(":%d", s.port)
+	addr := fmt.Sprintf("%s:%d", s.bindAddress, s.port)
 	return http.ListenAndServe(addr, mux)
+}
+
+func (s *Server) generateSessionToken() string {
+	b := make([]byte, 24)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func (s *Server) isAuthenticated(r *http.Request) bool {
+	if s.password == "" {
+		return true // Parola tanımlanmamışsa herkes girebilir
+	}
+
+	// 1. Bearer Token kontrolü
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if s.validateSession(token) {
+			return true
+		}
+	}
+
+	// 2. Cookie kontrolü
+	cookie, err := r.Cookie("oe_session")
+	if err == nil && cookie != nil {
+		if s.validateSession(cookie.Value) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *Server) validateSession(token string) bool {
+	if token == "" {
+		return false
+	}
+	s.sessionMu.RLock()
+	expiry, exists := s.sessions[token]
+	s.sessionMu.RUnlock()
+
+	if !exists || time.Now().After(expiry) {
+		return false
+	}
+	return true
+}
+
+func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.isAuthenticated(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": "Bu işlem için şifre ile giriş yapmanız gerekmektedir.",
+			})
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"required":      s.password != "",
+		"authenticated": s.isAuthenticated(r),
+	})
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Geçersiz istek", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if s.password != "" && req.Password != s.password {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Hatalı parola! Lütfen config.json dosyasındaki şifreyi girin.",
+		})
+		return
+	}
+
+	token := s.generateSessionToken()
+	s.sessionMu.Lock()
+	s.sessions[token] = time.Now().Add(7 * 24 * time.Hour) // 7 gün geçerli
+	s.sessionMu.Unlock()
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oe_session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   7 * 24 * 3600,
+	})
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"token":   token,
+	})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie("oe_session"); err == nil {
+		s.sessionMu.Lock()
+		delete(s.sessions, cookie.Value)
+		s.sessionMu.Unlock()
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oe_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
