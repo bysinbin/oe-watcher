@@ -227,20 +227,71 @@ func handleInstallService() {
 		fmt.Printf("❌ Program dosya yolu bulunamadı: %v\n", err)
 		return
 	}
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Printf("❌ Kullanıcı ev dizini bulunamadı: %v\n", err)
-		return
-	}
-
-	appSupportDir := filepath.Join(homeDir, "Library", "Application Support", "OEWatcher")
+	appSupportDir := config.GetUserConfigDir()
 	_ = os.MkdirAll(appSupportDir, 0755)
 
-	launchDir := filepath.Join(homeDir, "Library", "LaunchAgents")
-	_ = os.MkdirAll(launchDir, 0755)
-	plistPath := filepath.Join(launchDir, "com.bysinbin.oe-watcher.plist")
+	switch runtime.GOOS {
+	case "windows":
+		// Windows Registry HKCU Startup Run key
+		cmd := exec.Command("reg", "add", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "OEWatcher", "/t", "REG_SZ", "/d", exePath, "/f")
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("❌ Windows başlangıç kaydı eklenemedi: %v\n", err)
+			return
+		}
+		fmt.Println("✅ Başarılı! OE Watcher Windows başlangıcına (Startup Run) eklendi.")
+		fmt.Printf("📁 Yürütülebilir Dosya: %s\n", exePath)
 
-	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+	case "linux":
+		// Install systemd user service and autostart desktop entry
+		homeDir, _ := os.UserHomeDir()
+		systemdDir := filepath.Join(homeDir, ".config", "systemd", "user")
+		_ = os.MkdirAll(systemdDir, 0755)
+		servicePath := filepath.Join(systemdDir, "oe-watcher.service")
+
+		serviceContent := fmt.Sprintf(`[Unit]
+Description=OE Watcher Background Service
+After=network.target sound.target
+
+[Service]
+ExecStart=%s
+WorkingDirectory=%s
+Restart=always
+RestartSec=5
+StandardOutput=append:%s/oe-watcher.log
+StandardError=append:%s/oe-watcher.err
+
+[Install]
+WantedBy=default.target
+`, exePath, appSupportDir, appSupportDir, appSupportDir)
+
+		_ = os.WriteFile(servicePath, []byte(serviceContent), 0644)
+		_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
+		_ = exec.Command("systemctl", "--user", "enable", "--now", "oe-watcher.service").Run()
+
+		autostartDir := filepath.Join(homeDir, ".config", "autostart")
+		_ = os.MkdirAll(autostartDir, 0755)
+		desktopPath := filepath.Join(autostartDir, "oe-watcher.desktop")
+		desktopContent := fmt.Sprintf(`[Desktop Entry]
+Type=Application
+Name=OE Watcher
+Comment=Canlı Medya ve Sanatçı Takipçisi
+Exec=%s
+Terminal=false
+Categories=AudioVideo;Utility;
+X-GNOME-Autostart-enabled=true
+`, exePath)
+		_ = os.WriteFile(desktopPath, []byte(desktopContent), 0644)
+
+		fmt.Println("✅ Başarılı! OE Watcher Linux systemd ve masaüstü başlangıcına eklendi.")
+		fmt.Printf("📁 Servis dosyası: %s\n", servicePath)
+
+	default: // darwin
+		homeDir, _ := os.UserHomeDir()
+		launchDir := filepath.Join(homeDir, "Library", "LaunchAgents")
+		_ = os.MkdirAll(launchDir, 0755)
+		plistPath := filepath.Join(launchDir, "com.bysinbin.oe-watcher.plist")
+
+		plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -263,29 +314,42 @@ func handleInstallService() {
 </dict>
 </plist>`, exePath, appSupportDir, appSupportDir, appSupportDir)
 
-	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
-		fmt.Printf("❌ Plist dosyası oluşturulamadı: %v\n", err)
-		return
-	}
+		if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
+			fmt.Printf("❌ Plist dosyası oluşturulamadı: %v\n", err)
+			return
+		}
 
-	_ = exec.Command("launchctl", "unload", plistPath).Run()
-	if err := exec.Command("launchctl", "load", plistPath).Run(); err != nil {
-		fmt.Printf("⚠️ Servis dosyası oluşturuldu fakat launchctl ile yüklenemedi: %v\n", err)
-	} else {
-		fmt.Println("✅ Başarılı! OE Watcher LaunchAgent servisi kuruldu.")
-		fmt.Println("💡 Bilgisayarınızı her açtığınızda uygulama arka planda menü çubuğunda sessizce başlayacak.")
-		fmt.Printf("📁 Servis dosyası: %s\n", plistPath)
+		_ = exec.Command("launchctl", "unload", plistPath).Run()
+		if err := exec.Command("launchctl", "load", plistPath).Run(); err != nil {
+			fmt.Printf("⚠️ Servis dosyası oluşturuldu fakat launchctl ile yüklenemedi: %v\n", err)
+		} else {
+			fmt.Println("✅ Başarılı! OE Watcher LaunchAgent servisi kuruldu.")
+			fmt.Println("💡 Bilgisayarınızı her açtığınızda uygulama arka planda menü çubuğunda sessizce başlayacak.")
+			fmt.Printf("📁 Servis dosyası: %s\n", plistPath)
+		}
 	}
 }
 
 func handleUninstallService() {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Printf("❌ Kullanıcı ev dizini bulunamadı: %v\n", err)
-		return
+	switch runtime.GOOS {
+	case "windows":
+		_ = exec.Command("reg", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "OEWatcher", "/f").Run()
+		fmt.Println("✅ OE Watcher Windows başlangıç kaydı silindi.")
+
+	case "linux":
+		homeDir, _ := os.UserHomeDir()
+		_ = exec.Command("systemctl", "--user", "stop", "oe-watcher.service").Run()
+		_ = exec.Command("systemctl", "--user", "disable", "oe-watcher.service").Run()
+		_ = os.Remove(filepath.Join(homeDir, ".config", "systemd", "user", "oe-watcher.service"))
+		_ = os.Remove(filepath.Join(homeDir, ".config", "autostart", "oe-watcher.desktop"))
+		_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
+		fmt.Println("✅ OE Watcher Linux servisi ve otomatik başlatma kaydı kaldırıldı.")
+
+	default: // darwin
+		homeDir, _ := os.UserHomeDir()
+		plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.bysinbin.oe-watcher.plist")
+		_ = exec.Command("launchctl", "unload", plistPath).Run()
+		_ = os.Remove(plistPath)
+		fmt.Println("✅ OE Watcher otomatik başlatma servisi başarıyla kaldırıldı.")
 	}
-	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.bysinbin.oe-watcher.plist")
-	_ = exec.Command("launchctl", "unload", plistPath).Run()
-	_ = os.Remove(plistPath)
-	fmt.Println("✅ OE Watcher otomatik başlatma servisi başarıyla kaldırıldı.")
 }

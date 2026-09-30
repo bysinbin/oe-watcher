@@ -1,13 +1,61 @@
 {
   "version": 1,
   "stats": {
-    "total_detections": 0,
-    "total_auto_skips": 0,
+    "total_detections": 1,
+    "total_auto_skips": 1,
     "total_manual_skips": 0,
     "total_kept": 0,
     "total_snoozed": 0,
-    "top_persons": {},
-    "top_apps": {}
+    "top_persons": {
+      "Celil Nalçakan": 1
+    },
+    "top_apps": {
+      "YouTube Music": 1
+    },
+    "first_recorded": "2026-09-30 14:37:50",
+    "last_recorded": "2026-09-30 14:37:50"
   },
-  "items": []
+  "items": [
+    {
+      "id": "1790768270642344000",
+      "timestamp": "2026-09-30 14:37:50",
+      "track": {
+        "app": "YouTube Music",
+        "artist": "Hakan Altun, Celil Nalçakan, Aydın Kara",
+        "title": "Hakan Altun, Celil Nalçakan, Aydın Kara - Gelen Olmadı (Akustik - Arabesk)",
+        "album": "",
+        "state": "playing",
+        "url": "https://music.youtube.com/watch?v=IqHmZAfDSeQ\u0026list=RDAMVMnKLW4H2aQy0"
+      },
+      "person": {
+        "id": "deee315d-4be0-4ac8-83da-1adf264cb64b",
+        "display_name": "Celil Nalçakan",
+        "notes": null,
+        "tags": [
+          "Oyuncu"
+        ],
+        "topics": [
+          "Sırrı Süreyya Önder Paylaşımı"
+        ],
+        "created_at": "2026-09-30T08:35:26.483Z",
+        "updated_at": "2026-09-30T08:35:26.483Z",
+        "summary": {
+          "instagram": {
+            "pending": 1
+          },
+          "x": {
+            "pending": 1
+          }
+        },
+        "account_count": 2
+      },
+      "category": "Oyuncu",
+      "topics": [
+        "Sırrı Süreyya Önder Paylaşımı"
+      ],
+      "action": "auto_skipped",
+      "action_label": "Otomatik Geçildi",
+      "success": true
+    }
+  ]
 }

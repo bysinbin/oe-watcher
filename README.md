@@ -1,59 +1,56 @@
 # Medya Filtresi (OE List Watcher) 🎵🚫
 
-macOS üzerinde çalan medyaları (**Spotify**, **Apple Music**, **Google Chrome / YouTube**, **Safari**) anlık olarak izleyen ve verilen OE List API'sindeki kara liste ile eşleştiğinde kullanıcıyı uyararak şarkıyı geçme (skip) imkanı sunan profesyonel **Go (Golang)** uygulaması.
+**macOS**, **Windows** ve **Linux** üzerinde çalan medyaları (**Spotify**, **Apple Music**, **Google Chrome / YouTube**, **Brave**, **Safari**, **Edge**, **VLC**) anlık olarak izleyen ve verilen OE List API'sindeki kara liste ile eşleştiğinde kullanıcıyı uyararak şarkıyı geçme (skip) imkanı sunan profesyonel, çoklu platform destekli **Go (Golang)** uygulaması.
 
-Artık **macOS Menü Çubuğu (Menu Bar / Status Bar)** üzerinden sessizce çalışır, **`config.json`** ile yönetilir ve **yerel ağ şifresi** ile korunur.
+Arka planda sessizce çalışır, **`config.json`** veya modern **Web Kontrol Paneli** ile yönetilir ve **yerel ağ şifresi** ile korunur.
+
+---
+
+## 🌍 Platform Desteği ve Entegrasyonlar
+
+| Özellik | macOS | Windows (10 / 11) | Linux (GNOME, KDE vb.) |
+| :--- | :--- | :--- | :--- |
+| **İzlenen Medyalar** | Spotify, Apple Music, Chrome, Brave, Arc, Safari | Spotify Desktop, Chrome, Edge, GSMTC Medyaları | Spotify, Chromium, Firefox, VLC, MPRIS2 Oynatıcılar |
+| **Şarkı Geçişi (Skip)** | Donanımsal Medya Tuşu (19) + MediaRemote | Donanımsal Medya Tuşu (`VK_MEDIA_NEXT_TRACK`) | `playerctl`, D-Bus MPRIS2, `xdotool` |
+| **Kullanıcı Arayüzü** | Üst Menü Çubuğu (`🎧 OE`) + Canlı Web Paneli | Canlı Web Kontrol Paneli (`:8080`) | Canlı Web Kontrol Paneli (`:8080`) |
+| **Tarayıcı Filtresi** | Google Chrome Uzantısı (YouTube, X, Insta vb.) | Google Chrome Uzantısı (YouTube, X, Insta vb.) | Google Chrome Uzantısı (YouTube, X, Insta vb.) |
+| **Uyarı & Dialog** | macOS 3 Butonlu Etkileşimli Pencere | Windows Forms / PowerShell Uyarı Penceresi | `zenity` / `kdialog` / `notify-send` |
+| **Otomatik Başlatma** | macOS LaunchAgent (`-install-service`) | Windows Başlangıç Kaydı (`-install-service`) | Linux systemd user service (`-install-service`) |
+| **Veri Konumu** | `~/Library/Application Support/OEWatcher` | `%APPDATA%\OEWatcher` | `~/.config/OEWatcher` |
 
 ---
 
 ## 🚀 Öne Çıkan Özellikler
 
-1. **macOS Menü Çubuğu (Tray / Bildirim Alanı):**
-   - Terminali açık tutmanıza gerek kalmadan macOS üst menü çubuğunda (`🎧 OE`) yerleşir.
-   - Menüden tek tıkla: Web Panelini açma, şarkıyı hemen geçme, otomatik geçişi açıp kapatma ve API senkronizasyonu yapma.
-   - Kara listeden bir şarkı çaldığında menü çubuğu simgesi anında `🚨 OE [UYARI]` durumuna geçer.
+1. **Çoklu Platform (macOS, Windows, Linux) Desteği:**
+   - Go'nun sıfır harici C bağımlılığı prensibiyle Windows ve Linux üzerinde saf Go ile derlenir ve anında çalışır.
+   - macOS'ta yerel Cocoa Menü Çubuğu (`🎧 OE`) uygulamasını sunar.
 
-2. **Merkezi Yapılandırma (`config.json`):**
-   - API URL'i, web portu, ağ bağlantı adresi ve web arayüzü şifresi `config.json` üzerinden kolayca değiştirilebilir.
+2. **Canlı Web Kontrol Paneli (SSE Destekli):**
+   - Şarkı değişimleri, ertelemeler ve filtre durumları `http://127.0.0.1:8080` adresindeki modern web arayüzüne anında (0ms) yansır.
+   - Kara listedeki kişileri arayabilir, yeni kişi veya takma ad (alias) ekleyebilir, beyaz liste (exclude list) tanımlayabilirsiniz.
+
+3. **Merkezi Yapılandırma (`config.json`):**
+   - API URL'i, web portu, IP bağlantı adresi ve web arayüzü şifresi kolayca yönetilir.
    - Değişiklikler anında yürürlüğe girer.
 
-3. **Çift Katmanlı Ağ ve Parola Güvenliği:**
-   - **IP İzolasyonu (`bind_address: "127.0.0.1"`):** Varsayılan olarak yalnızca kendi bilgisayarınızdan erişilebilir. Aynı Wi-Fi/yerel ağdaki hiç kimse IP adresinizi yazarak panele erişemez.
-   - **Parola Koruması (`web_password`):** Web kontrol paneli parola ile korunur. Arayüze giren kullanıcılar `config.json` içindeki parolayı girmeden şarkıları göremez veya kuralları değiştiremez.
+4. **Çift Katmanlı Ağ ve Parola Güvenliği:**
+   - **IP İzolasyonu (`bind_address: "127.0.0.1"`):** Varsayılan olarak yalnızca kendi bilgisayarınızdan erişilebilir. Aynı Wi-Fi ağındaki hiç kimse IP adresinizi yazarak panele erişemez.
+   - **Parola Koruması (`web_password`):** Web kontrol paneli parola ile korunur (varsayılan: `admin`).
 
-4. **Özel Kurallar Yönetimi:**
+5. **Özel Kurallar Yönetimi:**
    - **➕ Elle Kişi Ekleme:** API'de yer almayan kişileri kara listeye dahil etme.
-   - **🔀 Alias (Mahlas) Eşleştirme:** Listeden kişiyi seçerek veya takma ad girerek (`Süperstar` ➔ `Ajda Pekkan`) hedef kişiyle bağlama.
-   - **🛡️ Exclude List (Beyaz Liste):** Kara listede olsa dahi muaf tutulacak sanatçı veya şarkıları belirleme.
+   - **🔀 Alias (Mahlas) Eşleştirme:** Takma ad girerek (`Süperstar` ➔ `Ajda Pekkan`) hedef kişiyle bağlama.
+   - **🛡️ Exclude List (Beyaz Liste):** URL veya isim tanımlayarak (`https://github.com/bysinbin/oe-watcher`, `Beşiktaş JK` vb.) muaf tutma.
 
-5. **Gelişmiş Eşleştirme & Canlı Medya Takibi:**
+6. **Gelişmiş Eşleştirme & Katkıda Bulunanlar Taraması:**
    - Türkçe karakter normalizasyonu (`İ/i`, `ö/o`, `ü/u`, `ş/s`, `ç/c`, `ğ/g`).
-   - Levenshtein tabanlı Bulanık Eşleştirme (Fuzzy Match).
-   - Düet ve `feat.` sanatçı ayrıştırması.
-   - **YouTube Açıklama & Katkıda Bulunanlar Taraması:** YouTube DOM/açıklama alanındaki `Söz:`, `Müzik:`, `Beat:`, `Prod:`, `Aranje:`, `Düet:` satırlarını tarayarak prodüktör veya söz yazarlarını yakalar.
-   - Spotify, Apple Music, Google Chrome, Brave, Arc Browser ve Safari tam desteği.
-   - Donanımsal medya tuşu simülasyonu ile kusursuz şarkı geçişi.
-
-6. **0ms Darwin Notification Center (Sıfır Ek CPU):**
-   - Spotify ve Apple Music şarkı geçişlerinde macOS Cocoa `NSDistributedNotificationCenter` üzerinden 0 milisaniye gecikmeyle uyanır.
-
-7. **Server-Sent Events (SSE) ile Anlık Web Paneli:**
-   - `/api/events` akışı sayesinde şarkı değişimleri, ertelemeler ve ayarlar web paneline anında (0ms) canlı yansır.
-
-8. **Etkileşimli 3 Butonlu macOS Dialog Penceresi:**
-   - Eşleşme olduğunda: **"Şarkıyı Geç"**, **"1 Saat Ertele (Snooze)"** ve **"Dinlemeye Devam"** seçenekleri sunulur.
-
-9. **Otomatik Arka Plan API Senkronizasyonu:**
-   - `auto_sync_hours: 12` ayarı ile arka planda sessizce yeni kara liste kayıtlarını günceller.
-
-10. **Bağımsız macOS `.app` Paketi (`OE Watcher.app`):**
-    - `./build_app.sh` komutuyla Dock'ta yer kaplamayan, doğrudan `/Applications` içine atılabilen bağımsız `.app` paketi üretilir.
+   - Levenshtein tabanlı Bulanık Eşleştirme (Fuzzy Match - %85 benzerlik toleransı).
+   - YouTube açıklaması ve şarkı künyesindeki prodüktör, aranjör, söz/müzik yazarlarını tarar.
 
 ---
 
 ## ⚙️ Yapılandırma (`config.json`)
-
-Uygulama ilk çalıştığında otomatik olarak aşağıdaki `config.json` dosyasını oluşturur:
 
 ```json
 {
@@ -75,41 +72,81 @@ Uygulama ilk çalıştığında otomatik olarak aşağıdaki `config.json` dosya
 * **`bind_address`**: `"127.0.0.1"` sayesinde dış ağdan gelen istekler işletim sistemi düzeyinde engellenir.
 * **`web_password`**: Web paneline girişte istenecek parola (varsayılan: `admin`).
 * **`auto_skip`**: `true` yapılırsa eşleşen şarkılar sormadan hemen atlanır.
-* **`enable_dialog`**: `true` olduğunda 3 seçenekli ("Şarkıyı Geç", "1 Saat Ertele", "Dinlemeye Devam") macOS penceresi açılır.
-* **`auto_sync_hours`**: Belirtilen saat aralığında (varsayılan: 12) API'den otomatik veri tazelemesi yapar.
-* **`fuzzy_matching` & `fuzzy_threshold`**: Harf hatalarını toleransla yakalar (%85 benzerlik).
+* **`enable_dialog`**: `true` olduğunda 3 seçenekli ("Şarkıyı Geç", "1 Saat Ertele", "Dinlemeye Devam") onay penceresi açılır.
+* **`auto_sync_hours`**: Belirtilen saat aralığında (varsayılan: 12 saat) arka planda sessizce yeni kara liste kayıtlarını tazeler.
 
 ---
 
-## 💻 Çalıştırma ve Kurulum
+## 💻 Derleme ve Kurulum
 
-### 1. Bağımsız `.app` Paketi Oluşturma (Önerilen)
+### 1. Tüm Platformları Tek Seferde Derleme
+```bash
+./build_all.sh
+```
+> Çıktılar doğrudan `dist/` klasörüne toplanır:
+> - `dist/OE Watcher.app` (macOS Uygulama Paketi)
+> - `dist/oe-watcher-windows-amd64.exe` (Windows 64-bit)
+> - `dist/oe-watcher-windows-arm64.exe` (Windows ARM64)
+> - `dist/oe-watcher-linux-amd64` (Linux 64-bit)
+> - `dist/oe-watcher-linux-arm64` (Linux ARM64 / Raspberry Pi)
+
+---
+
+### 2. Platforma Özel Derleme
+
+#### macOS:
 ```bash
 ./build_app.sh
 ```
-> Bu komut `dist/OE Watcher.app` paketini üretir. Çift tıklayarak açabilir veya `/Applications` (Uygulamalar) klasörüne taşıyabilirsiniz. Menü çubuğuna (`🎧 OE`) yerleşir ve Dock'ta görünmez.
+> `dist/OE Watcher.app` oluşturulur ve ad-hoc kod imzası uygulanır. `/Applications` klasörüne taşıyıp çift tıklayarak çalıştırabilirsiniz.
 
-### 2. Doğrudan Çalıştırma
-```bash
-./medya-filter
+#### Windows:
+```cmd
+build_windows.bat
+REM veya:
+go build -o dist/oe-watcher.exe .
 ```
 
-### 3. Mac Başlangıcında Otomatik Başlatma (LaunchAgent)
+#### Linux:
 ```bash
-./medya-filter -install-service    # Mac açılışında arka planda başlasın
-./medya-filter -uninstall-service  # Başlangıç servisini kaldır
+./build_linux.sh
+REM veya:
+go build -o dist/oe-watcher .
 ```
 
-### 4. Sadece Konsol / Terminal Modu
+---
+
+### 3. Bilgisayar Açılışında Otomatik Başlatma
+
+İşletim sisteminize göre tek komutla otomatik başlatma servisini kurabilirsiniz:
+
 ```bash
-./medya-filter -cli
+# macOS (LaunchAgent):
+./dist/OE\ Watcher.app/Contents/MacOS/OE\ Watcher -install-service
+
+# Windows (Registry Startup):
+dist\oe-watcher.exe -install-service
+
+# Linux (systemd user service & autostart desktop):
+./dist/oe-watcher -install-service
 ```
 
-### 5. Hızlı Test
+Kaldırmak için:
 ```bash
-./medya-filter -test "Ceza"
-./medya-filter -test "Süperstar"
+# Servisi kaldırma (tüm platformlarda):
+./oe-watcher -uninstall-service
 ```
+
+---
+
+## 🌐 Google Chrome Eklentisi (Chrome Extension)
+
+Proje içerisinde yer alan `extension/` klasörü, tarayıcıda gezinirken (Twitter/X, Instagram, YouTube, web siteleri) metinlerde veya videolarda kara listedeki isimler geçtiğinde içeriği filtrelemenizi ve Web Paneli ile konuşmanızı sağlar:
+
+1. Chrome'da `chrome://extensions` adresine gidin.
+2. Sağ üstteki **"Geliştirici Modu"**nu (Developer mode) açın.
+3. **"Paketlenmemiş Öğe Yükle"** (Load unpacked) butonuna tıklayıp projedeki `extension` klasörünü seçin.
+4. Eklenti, yerel OE Watcher servisi (`http://127.0.0.1:8080`) ile otomatik olarak senkronize çalışacaktır.
 
 ---
 
@@ -117,22 +154,28 @@ Uygulama ilk çalıştığında otomatik olarak aşağıdaki `config.json` dosya
 
 ```
 medya-filter/
-├── main.go                     # Giriş noktası, bayraklar ve menü çubuğu başlatıcı
-├── build_app.sh                # Bağımsız .app paketi derleme betiği
+├── main.go                     # Giriş noktası, bayraklar ve çoklu platform servis yöneticisi
+├── build_all.sh                # macOS, Windows ve Linux çoklu derleme betiği
+├── build_app.sh                # Bağımsız macOS .app paketi derleme ve kod imzalama
+├── build_windows.bat           # Windows yerel derleme betiği
+├── build_linux.sh              # Linux yerel derleme betiği
 ├── config.json                 # Yapılandırma dosyası (API, Port, Parola vb.)
+├── extension/                  # Google Chrome içerik filtreleme uzantısı
 ├── data/
 │   ├── persons.json            # API'den senkronize edilen kişi önbelleği
 │   ├── custom_rules.json       # Elle eklenen kişiler, aliaslar ve beyaz liste
 │   └── session.json            # API oturum belirteci
 ├── pkg/
-│   ├── config/                 # config.json okuma/yazma motoru
-│   ├── tray/                   # macOS Cocoa NSStatusItem & Darwin Notification Center
+│   ├── config/                 # Platformlar arası config ve veri yolu yöneticisi
+│   ├── tray/                   # macOS Cocoa Menü Çubuğu ve konsol döngüsü
 │   ├── models/                 # Veri modelleri (MediaInfo, MatchResult vb.)
 │   ├── api/                    # OE List API istemcisi
 │   ├── matcher/                # Eşleştirme motoru (Exact, Fuzzy, Katkıda Bulunanlar)
-│   ├── media/                  # Spotify, Apple Music, Chrome, Brave, Arc, Safari izleyicisi
-│   ├── notifier/               # macOS bildirim ve 3 butonlu etkileşimli dialog
+│   ├── media/                  # macOS (JXA/MediaRemote), Windows (GSMTC/Win32), Linux (MPRIS2) izleyicileri
+│   ├── notifier/               # macOS, Windows ve Linux yerel bildirim ve onay pencereleri
+│   ├── permission/             # macOS Accessibility TCC ve evrensel izin yöneticisi
+│   ├── history/                # Tespit ve şarkı geçiş geçmişi yöneticisi
+│   ├── rules/                  # Özel kurallar, takma ad ve exclude motoru
 │   └── web/                    # Gömülü Web Paneli (SSE, Canlı Dashboard, Ayarlar)
 └── README.md
 ```
-

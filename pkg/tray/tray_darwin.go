@@ -1,3 +1,5 @@
+//go:build darwin
+
 package tray
 
 /*
@@ -13,15 +15,6 @@ import (
 	"sync"
 	"unsafe"
 )
-
-type MenuCallbacks struct {
-	OnOpenWebPanel   func()
-	OnSkipTrack      func()
-	OnToggleAutoSkip func()
-	OnSyncAPI        func()
-	OnQuit           func()
-	OnFastPoll       func()
-}
 
 var (
 	cbMu      sync.RWMutex
@@ -158,12 +151,4 @@ func SetAutoSkipState(enabled bool) {
 		val = 1
 	}
 	C.UpdateTrayAutoSkip(C.int(val))
-}
-
-// OpenURL opens the given URL in the user's default web browser.
-func OpenURL(url string) {
-	cStr := C.CString(url)
-	defer C.free(unsafe.Pointer(cStr))
-
-	C.OpenBrowserURL(cStr)
 }
