@@ -132,6 +132,9 @@ func main() {
 	// Start media polling in background
 	go application.StartMonitoring(ctx)
 
+	// Start periodic silent API refresh loop in background
+	go application.StartAutoSync(ctx)
+
 	if !*cliMode {
 		fmt.Println("🎧 Uygulama macOS Menü Çubuğuna (Bildirim Paneli) yerleşti.")
 		fmt.Println("💡 Üst menü çubuğundaki '🎧 OE' simgesinden paneli açabilir, şarkı geçebilir veya çıkış yapabilirsiniz.")
@@ -157,6 +160,10 @@ func main() {
 				fmt.Println("\n🛑 Menüden çıkış yapıldı...")
 				cancel()
 				os.Exit(0)
+			},
+			OnFastPoll: func() {
+				// Darwin notification received (Spotify/Apple Music track changed)
+				application.TriggerFastPoll()
 			},
 		}
 

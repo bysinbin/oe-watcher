@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const cfgWebPassword = document.getElementById('cfgWebPassword');
   const cfgWebPort = document.getElementById('cfgWebPort');
   const cfgApiUrl = document.getElementById('cfgApiUrl');
+  const cfgAutoSyncHours = document.getElementById('cfgAutoSyncHours');
 
   // Rules I/O Elements
   const btnExportRules = document.getElementById('btnExportRules');
@@ -142,13 +143,18 @@ document.addEventListener('DOMContentLoaded', () => {
   function startApp() {
     loadPersons();
     loadRules();
+    setupSSE();
     pollStatus();
     if (!pollingTimer) {
-      pollingTimer = setInterval(pollStatus, 1500);
+      pollingTimer = setInterval(pollStatus, 3500);
     }
   }
 
   function showLoginOverlay(msg) {
+    if (eventSource) {
+      try { eventSource.close(); } catch(e) {}
+      eventSource = null;
+    }
     if (loginOverlay) {
       loginOverlay.style.display = 'flex';
       if (loginPassword) {
@@ -437,6 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (cfgWebPassword) cfgWebPassword.value = cfg.web_password || '';
           if (cfgWebPort) cfgWebPort.value = cfg.web_port || 8080;
           if (cfgApiUrl) cfgApiUrl.value = cfg.api_url || '';
+          if (cfgAutoSyncHours) cfgAutoSyncHours.value = cfg.auto_sync_hours !== undefined ? cfg.auto_sync_hours : 12;
 
           if (settingsModal) settingsModal.style.display = 'flex';
         })
@@ -473,6 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
           web_password: cfgWebPassword ? cfgWebPassword.value : 'admin',
           web_port: cfgWebPort ? parseInt(cfgWebPort.value) : 8080,
           api_url: cfgApiUrl ? cfgApiUrl.value.trim() : '',
+          auto_sync_hours: cfgAutoSyncHours ? parseInt(cfgAutoSyncHours.value) : 12,
           bind_address: '127.0.0.1'
         };
 
@@ -557,92 +565,141 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let eventSource = null;
+  function setupSSE() {
+    if (!window.EventSource) return;
+    if (eventSource) {
+      try { eventSource.close(); } catch(e) {}
+      eventSource = null;
+    }
+
+    try {
+      eventSource = new EventSource('/api/events');
+      eventSource.addEventListener('state', (e) => {
+        try {
+          const state = JSON.parse(e.data);
+          applyState(state);
+        } catch(err) {
+          console.error("SSE parse error", err);
+        }
+      });
+
+      eventSource.onopen = () => {
+        if (connStatus) {
+          connStatus.textContent = 'Canlı (0ms SSE Aktif)';
+          connStatus.style.color = '#38ef7d';
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        if (connStatus) {
+          connStatus.textContent = 'Bağlanıyor...';
+          connStatus.style.color = '#f5af19';
+        }
+      };
+    } catch(e) {
+      console.warn('SSE not initialized', e);
+    }
+  }
+
+  function applyState(state) {
+    if (!state) return;
+    if (connStatus && (!eventSource || eventSource.readyState !== EventSource.OPEN)) {
+      connStatus.textContent = 'Canlı İzleniyor';
+      connStatus.style.color = '#8c909e';
+    }
+
+    // Update Player Card
+    const media = state.current_media;
+    if (media && (media.artist || media.title)) {
+      trackTitle.textContent = media.title || 'İsimsiz Medya';
+      trackArtist.textContent = media.artist || (media.app || 'Bilinmiyor');
+      
+      let albumStr = media.album ? `Albüm: ${media.album}` : (media.url || '');
+      if (media.contributors) {
+        albumStr = (albumStr ? albumStr + ' • ' : '') + `Katkıda Bulunanlar: ${media.contributors}`;
+      }
+      trackAlbum.textContent = albumStr;
+      
+      playerSourceBadge.textContent = `${media.app || 'MEDYA'} (${(media.state || '').toUpperCase()})`;
+      playerSourceBadge.className = 'badge ' + (media.state === 'playing' ? 'playing' : '');
+      btnSkipManual.disabled = false;
+
+      if (btnPlayPause) {
+        btnPlayPause.disabled = false;
+        if (media.state === 'playing') {
+          if (playPauseIcon) playPauseIcon.textContent = '⏸️';
+          if (playPauseText) playPauseText.textContent = 'Duraklat';
+        } else {
+          if (playPauseIcon) playPauseIcon.textContent = '▶️';
+          if (playPauseText) playPauseText.textContent = 'Oynat';
+        }
+      }
+    } else {
+      trackTitle.textContent = 'Medya Algılanmadı';
+      trackArtist.textContent = 'Spotify, Apple Music, YouTube veya Tarayıcı açın';
+      trackAlbum.textContent = '';
+      playerSourceBadge.textContent = 'DURDURULDU';
+      playerSourceBadge.className = 'badge';
+      btnSkipManual.disabled = true;
+      if (btnPlayPause) btnPlayPause.disabled = true;
+    }
+
+    // Update Auto-skip toggle sync
+    if (autoSkipToggle && autoSkipToggle.checked !== state.auto_skip) {
+      autoSkipToggle.checked = state.auto_skip;
+    }
+
+    // Render Analytics Stats
+    if (state.stats) {
+      if (statTotalDetections) statTotalDetections.textContent = state.stats.total_detections || 0;
+      if (statAutoSkips) statAutoSkips.textContent = state.stats.total_auto_skips || 0;
+      if (statManualSkips) statManualSkips.textContent = state.stats.total_manual_skips || 0;
+      if (statTopPerson) {
+        let topName = '-';
+        let maxCount = 0;
+        if (state.stats.top_persons) {
+          for (const [name, count] of Object.entries(state.stats.top_persons)) {
+            if (count > maxCount) {
+              maxCount = count;
+              topName = `${name} (${count})`;
+            }
+          }
+        }
+        statTopPerson.textContent = topName;
+        statTopPerson.title = topName;
+      }
+    }
+
+    // Match Alert Box
+    const match = state.current_match;
+    if (match && match.matched) {
+      lastActiveMatch = match;
+      matchAlertBox.style.display = 'block';
+      alertMatchName.textContent = match.person.display_name;
+      alertMatchTags.textContent = (match.person.tags || []).join(', ') || '-';
+      alertMatchTopics.textContent = (match.topics || []).join(', ') || '-';
+      alertMatchCategory.textContent = match.category.toUpperCase();
+      playerSourceBadge.className = 'badge warn';
+    } else {
+      matchAlertBox.style.display = 'none';
+    }
+
+    // History Render
+    renderHistory(state.history || []);
+  }
+
   async function pollStatus() {
     try {
       const res = await fetch('/api/status');
       if (!res.ok) throw new Error('Status error');
       const state = await res.json();
-
-      connStatus.textContent = 'Canlı İzleniyor';
-      connStatus.style.color = '#8c909e';
-
-      // Update Player Card
-      const media = state.current_media;
-      if (media && (media.artist || media.title)) {
-        trackTitle.textContent = media.title || 'İsimsiz Medya';
-        trackArtist.textContent = media.artist || (media.app || 'Bilinmiyor');
-        trackAlbum.textContent = media.album ? `Albüm: ${media.album}` : (media.url || '');
-        
-        playerSourceBadge.textContent = `${media.app || 'MEDYA'} (${media.state.toUpperCase()})`;
-        playerSourceBadge.className = 'badge ' + (media.state === 'playing' ? 'playing' : '');
-        btnSkipManual.disabled = false;
-
-        if (btnPlayPause) {
-          btnPlayPause.disabled = false;
-          if (media.state === 'playing') {
-            if (playPauseIcon) playPauseIcon.textContent = '⏸️';
-            if (playPauseText) playPauseText.textContent = 'Duraklat';
-          } else {
-            if (playPauseIcon) playPauseIcon.textContent = '▶️';
-            if (playPauseText) playPauseText.textContent = 'Oynat';
-          }
-        }
-      } else {
-        trackTitle.textContent = 'Medya Algılanmadı';
-        trackArtist.textContent = 'Spotify, Apple Music, YouTube veya Tarayıcı açın';
-        trackAlbum.textContent = '';
-        playerSourceBadge.textContent = 'DURDURULDU';
-        playerSourceBadge.className = 'badge';
-        btnSkipManual.disabled = true;
-        if (btnPlayPause) btnPlayPause.disabled = true;
-      }
-
-      // Update Auto-skip toggle sync
-      if (autoSkipToggle.checked !== state.auto_skip) {
-        autoSkipToggle.checked = state.auto_skip;
-      }
-
-      // Render Analytics Stats
-      if (state.stats) {
-        if (statTotalDetections) statTotalDetections.textContent = state.stats.total_detections || 0;
-        if (statAutoSkips) statAutoSkips.textContent = state.stats.total_auto_skips || 0;
-        if (statManualSkips) statManualSkips.textContent = state.stats.total_manual_skips || 0;
-        if (statTopPerson) {
-          let topName = '-';
-          let maxCount = 0;
-          if (state.stats.top_persons) {
-            for (const [name, count] of Object.entries(state.stats.top_persons)) {
-              if (count > maxCount) {
-                maxCount = count;
-                topName = `${name} (${count})`;
-              }
-            }
-          }
-          statTopPerson.textContent = topName;
-          statTopPerson.title = topName;
-        }
-      }
-
-      // Match Alert Box
-      const match = state.current_match;
-      if (match && match.matched) {
-        lastActiveMatch = match;
-        matchAlertBox.style.display = 'block';
-        alertMatchName.textContent = match.person.display_name;
-        alertMatchTags.textContent = (match.person.tags || []).join(', ') || '-';
-        alertMatchTopics.textContent = (match.topics || []).join(', ') || '-';
-        alertMatchCategory.textContent = match.category.toUpperCase();
-        playerSourceBadge.className = 'badge warn';
-      } else {
-        matchAlertBox.style.display = 'none';
-      }
-
-      // History Render
-      renderHistory(state.history || []);
-
+      applyState(state);
     } catch (err) {
-      connStatus.textContent = 'Bağlantı Kesildi';
-      connStatus.style.color = '#f87171';
+      if (!eventSource || eventSource.readyState !== EventSource.OPEN) {
+        connStatus.textContent = 'Bağlantı Kesildi';
+        connStatus.style.color = '#f87171';
+      }
     }
   }
 
@@ -714,6 +771,12 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (item.action === 'manual_skip') {
         actionLabel = 'Manuel Geçildi';
         actionClass = 'skipped';
+      } else if (item.action === 'snoozed') {
+        actionLabel = '1 Saat Ertelendi';
+        actionClass = 'snoozed';
+      } else if (item.action === 'timeout') {
+        actionLabel = 'Zaman Aşımı';
+        actionClass = 'kept';
       }
 
       return `

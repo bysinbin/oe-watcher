@@ -47,12 +47,13 @@ func (p Person) ParsedNames() []string {
 
 // MediaInfo represents currently playing audio or video track.
 type MediaInfo struct {
-	App    string `json:"app"`
-	Artist string `json:"artist"`
-	Title  string `json:"title"`
-	Album  string `json:"album"`
-	State  string `json:"state"` // "playing", "paused", "stopped"
-	URL    string `json:"url,omitempty"`
+	App          string `json:"app"`
+	Artist       string `json:"artist"`
+	Title        string `json:"title"`
+	Album        string `json:"album"`
+	State        string `json:"state"` // "playing", "paused", "stopped"
+	URL          string `json:"url,omitempty"`
+	Contributors string `json:"contributors,omitempty"`
 }
 
 // MatchResult represents a matched person against currently playing media.

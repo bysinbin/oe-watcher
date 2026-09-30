@@ -20,6 +20,45 @@ import (
 //go:embed static/*
 var staticFS embed.FS
 
+type SSEHub struct {
+	mu      sync.RWMutex
+	clients map[chan []byte]bool
+}
+
+func newSSEHub() *SSEHub {
+	return &SSEHub{
+		clients: make(map[chan []byte]bool),
+	}
+}
+
+func (h *SSEHub) Subscribe() chan []byte {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ch := make(chan []byte, 16)
+	h.clients[ch] = true
+	return ch
+}
+
+func (h *SSEHub) Unsubscribe(ch chan []byte) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.clients[ch]; ok {
+		delete(h.clients, ch)
+		close(ch)
+	}
+}
+
+func (h *SSEHub) Broadcast(data []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for ch := range h.clients {
+		select {
+		case ch <- data:
+		default:
+		}
+	}
+}
+
 type Server struct {
 	app         *app.App
 	bindAddress string
@@ -27,12 +66,13 @@ type Server struct {
 	password    string
 	sessionMu   sync.RWMutex
 	sessions    map[string]time.Time
+	hub         *SSEHub
 }
 
-func NewServer(app *app.App, port int) *Server {
+func NewServer(application *app.App, port int) *Server {
 	bindAddr := "127.0.0.1"
 	password := ""
-	if cfg := app.GetConfig(); cfg != nil {
+	if cfg := application.GetConfig(); cfg != nil {
 		if cfg.BindAddress != "" {
 			bindAddr = cfg.BindAddress
 		}
@@ -45,13 +85,23 @@ func NewServer(app *app.App, port int) *Server {
 		port = 8080
 	}
 
-	return &Server{
-		app:         app,
+	hub := newSSEHub()
+	srv := &Server{
+		app:         application,
 		bindAddress: bindAddr,
 		port:        port,
 		password:    password,
 		sessions:    make(map[string]time.Time),
+		hub:         hub,
 	}
+
+	application.RegisterStateListener(func(st app.AppState) {
+		if data, err := json.Marshal(st); err == nil {
+			hub.Broadcast(data)
+		}
+	})
+
+	return srv
 }
 
 func (s *Server) Start() error {
@@ -63,6 +113,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/logout", s.handleLogout)
 
 	// Protected API endpoints
+	mux.HandleFunc("/api/events", s.authMiddleware(s.handleEvents))
 	mux.HandleFunc("/api/status", s.authMiddleware(s.handleStatus))
 	mux.HandleFunc("/api/skip", s.authMiddleware(s.handleSkip))
 	mux.HandleFunc("/api/settings", s.authMiddleware(s.handleSettings))
@@ -218,6 +269,43 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Send initial state immediately upon SSE connection
+	state := s.app.GetState()
+	if data, err := json.Marshal(state); err == nil {
+		fmt.Fprintf(w, "event: state\ndata: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	ch := s.hub.Subscribe()
+	defer s.hub.Unsubscribe(ch)
+
+	notify := r.Context().Done()
+	for {
+		select {
+		case <-notify:
+			return
+		case data, ok := <-ch:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(w, "event: state\ndata: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

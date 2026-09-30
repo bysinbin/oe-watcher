@@ -8,5 +8,6 @@
   "poll_interval_ms": 1500,
   "category": "HEPSİ",
   "fuzzy_matching": true,
-  "fuzzy_threshold": 0.85
+  "fuzzy_threshold": 0.85,
+  "auto_sync_hours": 12
 }

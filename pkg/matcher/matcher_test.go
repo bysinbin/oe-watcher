@@ -232,3 +232,27 @@ func TestMatcherFuzzyMatch(t *testing.T) {
 		t.Errorf("Expected matched name to indicate fuzzy match, got: %s", result.MatchedName)
 	}
 }
+
+func TestMatcherContributors(t *testing.T) {
+	m := matcher.NewMatcher(samplePersons())
+
+	// An unknown singer is performing, but the lyricist / beat maker in description is Ceza
+	track := models.MediaInfo{
+		App:          "Google Chrome",
+		Artist:       "Bilinmeyen Sanatçı",
+		Title:        "Yeni Şarkı 2026",
+		Contributors: "Söz: Ceza | Müzik: Anonymous | Beat: Studio",
+	}
+
+	result := m.Match(track)
+	if result == nil {
+		t.Fatalf("Expected match for contributor 'Ceza' in description credits, got nil")
+	}
+	if !strings.Contains(result.MatchedName, "Katkıda Bulunan") {
+		t.Errorf("Expected matched name to indicate contributor, got: %s", result.MatchedName)
+	}
+	if result.Person.DisplayName != "Ceza (Bilgin Özçalkan)" {
+		t.Errorf("Expected Ceza (Bilgin Özçalkan), got %s", result.Person.DisplayName)
+	}
+}
+

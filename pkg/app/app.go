@@ -44,6 +44,9 @@ type App struct {
 	lastSyncTime        time.Time
 	snoozedPersons      map[string]time.Time
 	stats               AppStats
+	fastPollChan        chan struct{}
+	stateListenersMu    sync.RWMutex
+	stateListeners      []func(AppState)
 }
 
 func NewAppWithConfig(cfg *config.Config, configPath, dataDir string) *App {
@@ -85,6 +88,8 @@ func NewAppWithConfig(cfg *config.Config, configPath, dataDir string) *App {
 		stats: AppStats{
 			TopPersons: make(map[string]int),
 		},
+		fastPollChan:   make(chan struct{}, 10),
+		stateListeners: make([]func(AppState), 0),
 	}
 }
 
@@ -98,6 +103,41 @@ func NewApp(dataDir string, autoSkip, enableDialog bool, pollInterval time.Durat
 	return NewAppWithConfig(cfg, "", dataDir)
 }
 
+// TriggerFastPoll immediately wakes up the monitoring loop on Darwin notifications (Spotify/Music).
+func (a *App) TriggerFastPoll() {
+	select {
+	case a.fastPollChan <- struct{}{}:
+	default:
+	}
+}
+
+// RegisterStateListener registers a callback to receive realtime state changes (e.g. for SSE).
+func (a *App) RegisterStateListener(fn func(AppState)) {
+	a.stateListenersMu.Lock()
+	defer a.stateListenersMu.Unlock()
+	a.stateListeners = append(a.stateListeners, fn)
+}
+
+func (a *App) notifyStateChanged() {
+	a.stateListenersMu.RLock()
+	if len(a.stateListeners) == 0 {
+		a.stateListenersMu.RUnlock()
+		return
+	}
+	listeners := make([]func(AppState), len(a.stateListeners))
+	copy(listeners, a.stateListeners)
+	a.stateListenersMu.RUnlock()
+
+	if len(listeners) == 0 {
+		return
+	}
+
+	state := a.GetState()
+	for _, fn := range listeners {
+		go fn(state)
+	}
+}
+
 // Init loads or synchronizes the person database.
 func (a *App) Init(forceSync bool) error {
 	a.mu.Lock()
@@ -109,6 +149,7 @@ func (a *App) Init(forceSync bool) error {
 		a.mu.Lock()
 		a.syncStatus = fmt.Sprintf("Hata: %v", err)
 		a.mu.Unlock()
+		a.notifyStateChanged()
 		return err
 	}
 
@@ -119,12 +160,24 @@ func (a *App) Init(forceSync bool) error {
 	a.lastSyncTime = time.Now()
 	a.mu.Unlock()
 
+	a.notifyStateChanged()
 	return nil
 }
 
-// StartMonitoring begins the background polling loop.
-func (a *App) StartMonitoring(ctx context.Context) {
-	ticker := time.NewTicker(a.pollInterval)
+// StartAutoSync runs a periodic background synchronization with the API.
+func (a *App) StartAutoSync(ctx context.Context) {
+	a.mu.RLock()
+	hours := 12
+	if a.cfg != nil && a.cfg.AutoSyncHours > 0 {
+		hours = a.cfg.AutoSyncHours
+	}
+	a.mu.RUnlock()
+
+	if hours <= 0 {
+		return
+	}
+
+	ticker := time.NewTicker(time.Duration(hours) * time.Hour)
 	defer ticker.Stop()
 
 	for {
@@ -132,6 +185,38 @@ func (a *App) StartMonitoring(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			a.mu.RLock()
+			curHours := 12
+			if a.cfg != nil {
+				curHours = a.cfg.AutoSyncHours
+			}
+			a.mu.RUnlock()
+
+			if curHours > 0 {
+				fmt.Printf("\n🔄 [Auto-Sync] %d saatlik periyodik API senkronizasyonu başlatılıyor...\n", curHours)
+				_ = a.Init(true)
+			}
+		}
+	}
+}
+
+// StartMonitoring begins the background polling loop.
+func (a *App) StartMonitoring(ctx context.Context) {
+	ticker := time.NewTicker(a.pollInterval)
+	defer ticker.Stop()
+
+	// Initial check
+	a.pollOnce()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.pollOnce()
+		case <-a.fastPollChan:
+			// Darwin Notification center woke us up (0ms / Zero CPU)
+			time.Sleep(80 * time.Millisecond)
 			a.pollOnce()
 		}
 	}
@@ -183,6 +268,8 @@ func (a *App) pollOnce() {
 	autoSkipMode := a.autoSkip
 	dialogMode := a.enableDialog
 	a.mu.Unlock()
+
+	a.notifyStateChanged()
 
 	if matchedResult != nil {
 		tray.SetTrack(primaryTrack.Artist, primaryTrack.Title, true)
@@ -247,17 +334,21 @@ func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaI
 	}
 
 	if showDialog {
-		// Run dialog in goroutine to not block polling
+		// Run interactive dialog in goroutine to not block polling loop
 		go func() {
-			fmt.Printf("\033[1;33m❓ Kullanıcıya soruluyor: '%s' geçilsin mi?\033[0m\n", match.Person.DisplayName)
-			shouldSkip, err := notifier.PromptSkip(match)
+			fmt.Printf("\033[1;33m❓ Kullanıcıya soruluyor: '%s' için işlem seçiniz...\033[0m\n", match.Person.DisplayName)
+			action, err := notifier.PromptAction(match)
 			if err != nil {
 				fmt.Printf("Dialog hatası: %v\n", err)
 				return
 			}
 
-			if shouldSkip {
+			switch action {
+			case notifier.ActionSkip:
 				fmt.Println("\033[1;32m✅ Kullanıcı 'Şarkıyı Geç' butonuna bastı. Geçiliyor...\033[0m")
+				a.mu.Lock()
+				a.stats.TotalManualSkips++
+				a.mu.Unlock()
 				if err := media.SkipTrack(track); err != nil {
 					fmt.Printf("\033[1;31m❌ Şarkı geçilemedi: %v\033[0m\n", err)
 					notifier.ShowNotification("⚠️ Şarkı Geçilemedi", "Chrome Ayarı Gerekli", "Görünüm > Geliştirici > Apple Events iznini açın")
@@ -265,9 +356,16 @@ func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaI
 					a.recordHistory(track, match.Person, "skipped")
 					notifier.ShowNotification("⏩ Şarkı Geçildi", match.Person.DisplayName, track.Title)
 				}
-			} else {
+			case notifier.ActionSnooze:
+				fmt.Printf("\033[1;33m⏳ Kullanıcı '1 Saat Ertele' seçti: '%s' 1 saat boyunca muaf tutulacak.\033[0m\n", match.Person.DisplayName)
+				a.SnoozePerson(match.Person.DisplayName, 1*time.Hour)
+				a.recordHistory(track, match.Person, "snoozed")
+				notifier.ShowNotification("⏳ 1 Saat Ertelendi", match.Person.DisplayName, "Bu kişi 1 saat boyunca uyarılmayacak.")
+			case notifier.ActionKeep:
 				fmt.Println("\033[1;30m⏹️ Kullanıcı şarkıyı dinlemeye devam etmeyi seçti.\033[0m")
 				a.recordHistory(track, match.Person, "kept")
+			default:
+				a.recordHistory(track, match.Person, "timeout")
 			}
 		}()
 	} else {
@@ -277,8 +375,6 @@ func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaI
 
 func (a *App) recordHistory(track models.MediaInfo, person models.Person, action string) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	item := models.HistoryItem{
 		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
 		Timestamp: time.Now().Format("15:04:05"),
@@ -292,6 +388,9 @@ func (a *App) recordHistory(track models.MediaInfo, person models.Person, action
 	if len(a.history) > 50 {
 		a.history = a.history[:50]
 	}
+	a.mu.Unlock()
+
+	a.notifyStateChanged()
 }
 
 // SkipCurrent forces skip on current media.
@@ -324,13 +423,14 @@ func (a *App) PlayPauseCurrent() error {
 // SnoozePerson temporarily ignores a person for a given duration.
 func (a *App) SnoozePerson(displayName string, duration time.Duration) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.snoozedPersons == nil {
 		a.snoozedPersons = make(map[string]time.Time)
 	}
 	clean := strings.ToLower(strings.TrimSpace(displayName))
 	a.snoozedPersons[clean] = time.Now().Add(duration)
+	a.mu.Unlock()
 	fmt.Printf("⏳ [Snooze] '%s' kişisi %v süresince muaf tutuldu.\n", displayName, duration)
+	go a.notifyStateChanged()
 }
 
 // IsSnoozed checks if a person is currently snoozed.
@@ -460,6 +560,7 @@ func (a *App) UpdateConfig(newCfg *config.Config) error {
 	tray.SetAutoSkipState(newCfg.AutoSkip)
 
 	a.saveConfigLocked()
+	go a.notifyStateChanged()
 	return nil
 }
 
@@ -473,6 +574,7 @@ func (a *App) SetAutoSkip(val bool) {
 		a.cfg.AutoSkip = val
 		a.saveConfigLocked()
 	}
+	go a.notifyStateChanged()
 }
 
 // SetEnableDialog updates dialog preference and persists to config.
@@ -484,6 +586,7 @@ func (a *App) SetEnableDialog(val bool) {
 		a.cfg.EnableDialog = val
 		a.saveConfigLocked()
 	}
+	go a.notifyStateChanged()
 }
 
 // SetFuzzy updates fuzzy matching preference and persists to config.
@@ -498,6 +601,7 @@ func (a *App) SetFuzzy(enabled bool, threshold float64) {
 		}
 		a.saveConfigLocked()
 	}
+	go a.notifyStateChanged()
 }
 
 // SetFilters updates allowed categories and topics and persists default category.
@@ -513,6 +617,7 @@ func (a *App) SetFilters(categories, topics []string) {
 		a.cfg.Category = categories[0]
 		a.saveConfigLocked()
 	}
+	go a.notifyStateChanged()
 }
 
 // ExportRules exports rules as formatted JSON.
@@ -525,6 +630,7 @@ func (a *App) ImportRules(data []byte) error {
 	err := a.rulesMgr.Import(data)
 	if err == nil {
 		a.matcher.RebuildIndex()
+		go a.notifyStateChanged()
 	}
 	return err
 }
@@ -549,6 +655,7 @@ func (a *App) AddCustomPerson(name string, tags, topics, aliases []string) (rule
 	cp, err := a.rulesMgr.AddPerson(name, tags, topics, aliases)
 	if err == nil {
 		a.matcher.RebuildIndex()
+		go a.notifyStateChanged()
 	}
 	return cp, err
 }
@@ -558,6 +665,7 @@ func (a *App) RemoveCustomPerson(id string) bool {
 	removed := a.rulesMgr.RemovePerson(id)
 	if removed {
 		a.matcher.RebuildIndex()
+		go a.notifyStateChanged()
 	}
 	return removed
 }
@@ -567,6 +675,7 @@ func (a *App) SetCustomAlias(alias, target string) error {
 	err := a.rulesMgr.SetAlias(alias, target)
 	if err == nil {
 		a.matcher.RebuildIndex()
+		go a.notifyStateChanged()
 	}
 	return err
 }
@@ -576,16 +685,25 @@ func (a *App) RemoveCustomAlias(alias string) bool {
 	removed := a.rulesMgr.RemoveAlias(alias)
 	if removed {
 		a.matcher.RebuildIndex()
+		go a.notifyStateChanged()
 	}
 	return removed
 }
 
 // AddExclude adds a name to the whitelist.
 func (a *App) AddExclude(name string) error {
-	return a.rulesMgr.AddExclude(name)
+	err := a.rulesMgr.AddExclude(name)
+	if err == nil {
+		go a.notifyStateChanged()
+	}
+	return err
 }
 
 // RemoveExclude removes a name from the whitelist.
 func (a *App) RemoveExclude(name string) bool {
-	return a.rulesMgr.RemoveExclude(name)
+	removed := a.rulesMgr.RemoveExclude(name)
+	if removed {
+		go a.notifyStateChanged()
+	}
+	return removed
 }

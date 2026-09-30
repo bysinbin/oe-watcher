@@ -10,6 +10,27 @@ import (
 )
 
 const queryScript = `
+function extractCredits(rawTitle, tab) {
+	let credits = [];
+	try {
+		let m = rawTitle.match(/[\(\[](?:feat\.?|ft\.?|prod\.?|beat|söz|müzik|düet|with)[\s:]+([^\)\]]+)[\)\]]/gi);
+		if (m) {
+			credits.push(m.join(" "));
+		}
+	} catch(e) {}
+
+	try {
+		if (tab && typeof tab.execute === "function") {
+			let domCredits = tab.execute({javascript: "(function(){let el=document.querySelector('#description-inline-expander, #description, meta[name=\\'description\\']');let text=el?(el.innerText||el.content||''):'';if(!text)return '';let matched=[];let lines=text.split('\\n');for(let i=0;i<lines.length;i++){let l=lines[i].trim();if(/(?:söz|müzik|beste|aranje|beat|prod|düet|feat|mix|mastering|lyric|composer)/i.test(l)){matched.push(l);if(matched.length>=8)break;}}return matched.join(' | ');})()"});
+			if (domCredits && typeof domCredits === "string" && domCredits.trim().length > 0) {
+				credits.push(domCredits.trim());
+			}
+		}
+	} catch(e) {}
+
+	return credits.join(" | ");
+}
+
 function run() {
 	let list = [];
 
@@ -85,6 +106,8 @@ function run() {
 							trackTitle = parts.slice(1).join(" - ").trim();
 						}
 
+						let contribs = extractCredits(rawTitle, tab);
+
 						list.push({
 							app: isMusicSite ? "YouTube Music" : "Google Chrome",
 							artist: artist,
@@ -92,6 +115,7 @@ function run() {
 							album: "",
 							state: "playing",
 							url: url,
+							contributors: contribs,
 							priority: isMusicSite ? 1 : 2
 						});
 					}
@@ -130,6 +154,8 @@ function run() {
 							artist = parts[0].trim();
 						}
 
+						let contribs = extractCredits(rawTitle, null);
+
 						list.push({
 							app: isMusicSite ? "Safari (Music)" : "Safari",
 							artist: artist,
@@ -137,6 +163,7 @@ function run() {
 							album: "",
 							state: "playing",
 							url: url,
+							contributors: contribs,
 							priority: isMusicSite ? 1 : 2
 						});
 					}
@@ -177,6 +204,8 @@ function run() {
 							artist = parts[0].trim();
 						}
 
+						let contribs = extractCredits(rawTitle, tab);
+
 						list.push({
 							app: isMusicSite ? "Brave (Music)" : "Brave",
 							artist: artist,
@@ -184,6 +213,7 @@ function run() {
 							album: "",
 							state: "playing",
 							url: url,
+							contributors: contribs,
 							priority: isMusicSite ? 1 : 2
 						});
 					}
@@ -224,6 +254,8 @@ function run() {
 							artist = parts[0].trim();
 						}
 
+						let contribs = extractCredits(rawTitle, tab);
+
 						list.push({
 							app: isMusicSite ? "Arc (Music)" : "Arc",
 							artist: artist,
@@ -231,6 +263,7 @@ function run() {
 							album: "",
 							state: "playing",
 							url: url,
+							contributors: contribs,
 							priority: isMusicSite ? 1 : 2
 						});
 					}

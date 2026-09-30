@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,5 +136,22 @@ func TestServerAuthentication(t *testing.T) {
 	err = appWithFile.ImportRules(exportBytes)
 	if err != nil {
 		t.Fatalf("ImportRules failed: %v", err)
+	}
+
+	// 9. Test SSE Endpoint (/api/events)
+	reqSSE, _ := http.NewRequest("GET", baseURL+"/api/events", nil)
+	reqSSE.Header.Set("Authorization", "Bearer "+token)
+	respSSE, err := http.DefaultClient.Do(reqSSE)
+	if err != nil {
+		t.Fatalf("SSE request failed: %v", err)
+	}
+	defer respSSE.Body.Close()
+
+	if respSSE.StatusCode != http.StatusOK {
+		t.Errorf("Expected status 200 for SSE, got %d", respSSE.StatusCode)
+	}
+	ct := respSSE.Header.Get("Content-Type")
+	if !strings.Contains(ct, "text/event-stream") {
+		t.Errorf("Expected text/event-stream Content-Type, got %s", ct)
 	}
 }

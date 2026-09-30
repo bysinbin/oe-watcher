@@ -1,9 +1,12 @@
-# Compiled binary
+# Build output
+dist/
 medya-filter
 
 # Logs and temporary files
 *.log
+*.err
 .DS_Store
 
 # Session tokens
 data/session.json
+

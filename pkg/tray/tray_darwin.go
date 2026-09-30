@@ -20,6 +20,7 @@ type MenuCallbacks struct {
 	OnToggleAutoSkip func()
 	OnSyncAPI        func()
 	OnQuit           func()
+	OnFastPoll       func()
 }
 
 var (
@@ -83,6 +84,17 @@ func goQuitApp() {
 
 	if cb != nil {
 		cb()
+	}
+}
+
+//export goTriggerFastPoll
+func goTriggerFastPoll() {
+	cbMu.RLock()
+	cb := callbacks.OnFastPoll
+	cbMu.RUnlock()
+
+	if cb != nil {
+		go cb()
 	}
 }
 

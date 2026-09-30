@@ -460,7 +460,7 @@
             </div>
           </div>
 
-          <!-- Password & Web Port -->
+          <!-- Password, Web Port & Auto-Sync -->
           <div class="settings-row-pair">
             <div class="settings-field">
               <label for="cfgWebPassword">Web Paneli Giriş Parolası:</label>
@@ -472,9 +472,20 @@
             </div>
           </div>
 
-          <div class="settings-field">
-            <label for="cfgApiUrl">OE List API URL:</label>
-            <input type="text" id="cfgApiUrl" placeholder="https://oelist-api.frax.tr/v1">
+          <div class="settings-row-pair">
+            <div class="settings-field">
+              <label for="cfgAutoSyncHours">Otomatik API Senkronizasyonu:</label>
+              <select id="cfgAutoSyncHours">
+                <option value="6">Her 6 Saatte Bir</option>
+                <option value="12">Her 12 Saatte Bir (Önerilen)</option>
+                <option value="24">Günde Bir Kez (24 Saat)</option>
+                <option value="0">Devre Dışı (Yalnızca Manuel)</option>
+              </select>
+            </div>
+            <div class="settings-field">
+              <label for="cfgApiUrl">OE List API URL:</label>
+              <input type="text" id="cfgApiUrl" placeholder="https://oelist-api.frax.tr/v1">
+            </div>
           </div>
 
           <p class="modal-hint">💾 <strong>config.json otomatik güncellenir:</strong> Kaydettiğiniz tüm ayarlar <code>config.json</code> dosyasına kaydedilir ve bir sonraki açılışlarda korunur.</p>

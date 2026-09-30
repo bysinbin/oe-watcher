@@ -200,6 +200,7 @@ func (m *Matcher) Match(track models.MediaInfo) *models.MatchResult {
 
 	artistFolded := CleanAndFold(track.Artist)
 	titleFolded := CleanAndFold(track.Title)
+	contribFolded := CleanAndFold(track.Contributors)
 
 	// Split artists if multiple (e.g. "Ceza, Sezen Aksu" -> ["ceza", "sezen aksu"])
 	artistPartsRaw := artistSeparators.Split(track.Artist, -1)
@@ -259,6 +260,11 @@ func (m *Matcher) Match(track models.MediaInfo) *models.MatchResult {
 			// 3. For video/stream titles (like YouTube), check if title contains the candidate name
 			if titleFolded != "" && containsWord(titleFolded, candFolded) {
 				return m.buildResult(item.Person, cand.Original, track)
+			}
+
+			// 4. For contributors / credits (YouTube description, Söz, Müzik, Beat, Prod)
+			if contribFolded != "" && containsWord(contribFolded, candFolded) {
+				return m.buildResult(item.Person, cand.Original+" (Katkıda Bulunan: Söz/Müzik/Prod)", track)
 			}
 		}
 	}

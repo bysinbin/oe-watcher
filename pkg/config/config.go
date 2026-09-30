@@ -23,6 +23,7 @@ type Config struct {
 	Category       string  `json:"category"`
 	FuzzyMatching  bool    `json:"fuzzy_matching"`
 	FuzzyThreshold float64 `json:"fuzzy_threshold"`
+	AutoSyncHours  int     `json:"auto_sync_hours"`
 }
 
 func DefaultConfig() *Config {
@@ -37,6 +38,7 @@ func DefaultConfig() *Config {
 		Category:       "HEPSİ",
 		FuzzyMatching:  true,
 		FuzzyThreshold: 0.85,
+		AutoSyncHours:  12,
 	}
 }
 

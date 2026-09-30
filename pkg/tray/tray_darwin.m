@@ -7,6 +7,7 @@ extern void goSkipTrack(void);
 extern void goToggleAutoSkip(void);
 extern void goSyncAPI(void);
 extern void goQuitApp(void);
+extern void goTriggerFastPoll(void);
 
 @interface TrayController : NSObject
 @property (strong, nonatomic) NSStatusItem *statusItem;
@@ -20,6 +21,8 @@ extern void goQuitApp(void);
 - (void)menuToggleAutoSkip:(id)sender;
 - (void)menuSync:(id)sender;
 - (void)menuQuit:(id)sender;
+- (void)setupDarwinNotifications;
+- (void)onPlayerNotification:(NSNotification *)note;
 @end
 
 static TrayController *s_controller = nil;
@@ -55,6 +58,22 @@ static TrayController *s_controller = nil;
     [NSApp terminate:nil];
 }
 
+- (void)setupDarwinNotifications {
+    NSDistributedNotificationCenter *center = [NSDistributedNotificationCenter defaultCenter];
+    [center addObserver:self
+               selector:@selector(onPlayerNotification:)
+                   name:@"com.spotify.client.PlaybackStateChanged"
+                 object:nil];
+    [center addObserver:self
+               selector:@selector(onPlayerNotification:)
+                   name:@"com.apple.Music.playerInfo"
+                 object:nil];
+}
+
+- (void)onPlayerNotification:(NSNotification *)note {
+    goTriggerFastPoll();
+}
+
 @end
 
 void InitTray(const char *initialTitle, int port, int autoSkip) {
@@ -62,6 +81,7 @@ void InitTray(const char *initialTitle, int port, int autoSkip) {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 
     TrayController *tc = [TrayController shared];
+    [tc setupDarwinNotifications];
 
     // In macOS 10.14+, callers must hold a strong reference to NSStatusItem
     tc.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
