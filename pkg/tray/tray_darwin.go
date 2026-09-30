@@ -1,7 +1,7 @@
 package tray
 
 /*
-#cgo CFLAGS: -x objective-c
+#cgo CFLAGS: -fobjc-arc -x objective-c
 #cgo LDFLAGS: -framework Cocoa -framework AppKit
 #include "tray_darwin.h"
 #include <stdlib.h>

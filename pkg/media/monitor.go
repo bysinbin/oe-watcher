@@ -72,6 +72,11 @@ function run() {
 							.replace(/\s*\|\s*SoundCloud$/i, "")
 							.trim();
 
+						let low = cleanTitle.toLowerCase();
+						if (cleanTitle === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
+							continue;
+						}
+
 						let artist = "";
 						let trackTitle = cleanTitle;
 						if (cleanTitle.includes(" - ")) {
@@ -113,6 +118,11 @@ function run() {
 							.replace(/\s*-\s*YouTube$/i, "")
 							.replace(/\s*\|\s*YouTube$/i, "")
 							.trim();
+
+						let low = cleanTitle.toLowerCase();
+						if (cleanTitle === "" || low === "youtube music" || low === "youtube" || low === "spotify" || low === "soundcloud") {
+							continue;
+						}
 
 						let artist = "";
 						if (cleanTitle.includes(" - ")) {

@@ -8,7 +8,13 @@ extern void goToggleAutoSkip(void);
 extern void goSyncAPI(void);
 extern void goQuitApp(void);
 
-@interface TrayBridge : NSObject
+@interface TrayController : NSObject
+@property (strong, nonatomic) NSStatusItem *statusItem;
+@property (strong, nonatomic) NSMenuItem *statusMenu;
+@property (strong, nonatomic) NSMenuItem *trackMenu;
+@property (strong, nonatomic) NSMenuItem *autoSkipMenu;
+
++ (instancetype)shared;
 - (void)menuOpenWeb:(id)sender;
 - (void)menuSkipTrack:(id)sender;
 - (void)menuToggleAutoSkip:(id)sender;
@@ -16,105 +22,131 @@ extern void goQuitApp(void);
 - (void)menuQuit:(id)sender;
 @end
 
-static TrayBridge *g_bridge = nil;
-static NSStatusItem *g_statusItem = nil;
-static NSMenuItem *g_statusMenu = nil;
-static NSMenuItem *g_trackMenu = nil;
-static NSMenuItem *g_autoSkipMenu = nil;
+static TrayController *s_controller = nil;
 
-@implementation TrayBridge
+@implementation TrayController
+
++ (instancetype)shared {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        s_controller = [[TrayController alloc] init];
+    });
+    return s_controller;
+}
+
 - (void)menuOpenWeb:(id)sender {
     goOpenWebPanel();
 }
+
 - (void)menuSkipTrack:(id)sender {
     goSkipTrack();
 }
+
 - (void)menuToggleAutoSkip:(id)sender {
     goToggleAutoSkip();
 }
+
 - (void)menuSync:(id)sender {
     goSyncAPI();
 }
+
 - (void)menuQuit:(id)sender {
     goQuitApp();
     [NSApp terminate:nil];
 }
+
 @end
 
 void InitTray(const char *initialTitle, int port, int autoSkip) {
-    @autoreleasepool {
-        [NSApplication sharedApplication];
-        // Hide dock icon so app runs silently in menu bar
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    [NSApplication sharedApplication];
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 
-        g_bridge = [[TrayBridge alloc] init];
+    TrayController *tc = [TrayController shared];
 
-        g_statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
-        g_statusItem.button.title = [NSString stringWithUTF8String:initialTitle];
+    // In macOS 10.14+, callers must hold a strong reference to NSStatusItem
+    tc.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
 
-        NSMenu *menu = [[NSMenu alloc] initWithTitle:@"OE Watcher"];
-
-        // Header
-        NSMenuItem *header = [[NSMenuItem alloc] initWithTitle:@"OE LIST // MEDYA TAKİPÇİSİ" action:nil keyEquivalent:@""];
-        [header setEnabled:NO];
-        [menu addItem:header];
-
-        // Status
-        g_statusMenu = [[NSMenuItem alloc] initWithTitle:@"Durum: Canlı İzleniyor" action:nil keyEquivalent:@""];
-        [g_statusMenu setEnabled:NO];
-        [menu addItem:g_statusMenu];
-
-        // Current Track
-        g_trackMenu = [[NSMenuItem alloc] initWithTitle:@"Çalan: -" action:nil keyEquivalent:@""];
-        [g_trackMenu setEnabled:NO];
-        [menu addItem:g_trackMenu];
-
-        [menu addItem:[NSMenuItem separatorItem]];
-
-        // Web Panel Button
-        NSString *webTitle = [NSString stringWithFormat:@"🌐 Web Panelini Aç (Port: %d)", port];
-        NSMenuItem *webItem = [[NSMenuItem alloc] initWithTitle:webTitle action:@selector(menuOpenWeb:) keyEquivalent:@"w"];
-        [webItem setTarget:g_bridge];
-        [menu addItem:webItem];
-
-        // Skip Track Button
-        NSMenuItem *skipItem = [[NSMenuItem alloc] initWithTitle:@"⏩ Şarkıyı Hemen Geç" action:@selector(menuSkipTrack:) keyEquivalent:@"s"];
-        [skipItem setTarget:g_bridge];
-        [menu addItem:skipItem];
-
-        // Auto-Skip Toggle Button
-        NSString *autoSkipTitle = autoSkip ? @"⚡ Otomatik Geçiş: [AÇIK]" : @"⚡ Otomatik Geçiş: [KAPALI]";
-        g_autoSkipMenu = [[NSMenuItem alloc] initWithTitle:autoSkipTitle action:@selector(menuToggleAutoSkip:) keyEquivalent:@"a"];
-        [g_autoSkipMenu setTarget:g_bridge];
-        [menu addItem:g_autoSkipMenu];
-
-        // Sync API Button
-        NSMenuItem *syncItem = [[NSMenuItem alloc] initWithTitle:@"🔄 API Senkronize Et" action:@selector(menuSync:) keyEquivalent:@"r"];
-        [syncItem setTarget:g_bridge];
-        [menu addItem:syncItem];
-
-        [menu addItem:[NSMenuItem separatorItem]];
-
-        // Quit Button
-        NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"❌ Çıkış Yap" action:@selector(menuQuit:) keyEquivalent:@"q"];
-        [quitItem setTarget:g_bridge];
-        [menu addItem:quitItem];
-
-        g_statusItem.menu = menu;
+    NSString *titleStr = @"🎧 OE";
+    if (initialTitle != NULL) {
+        NSString *s = [NSString stringWithUTF8String:initialTitle];
+        if (s) titleStr = s;
     }
+    tc.statusItem.button.title = titleStr;
+
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"OE Watcher"];
+
+    // Header
+    NSMenuItem *header = [[NSMenuItem alloc] initWithTitle:@"OE LIST // MEDYA TAKİPÇİSİ" action:nil keyEquivalent:@""];
+    [header setEnabled:NO];
+    [menu addItem:header];
+
+    // Status
+    tc.statusMenu = [[NSMenuItem alloc] initWithTitle:@"Durum: Canlı İzleniyor" action:nil keyEquivalent:@""];
+    [tc.statusMenu setEnabled:NO];
+    [menu addItem:tc.statusMenu];
+
+    // Current Track
+    tc.trackMenu = [[NSMenuItem alloc] initWithTitle:@"Çalan: -" action:nil keyEquivalent:@""];
+    [tc.trackMenu setEnabled:NO];
+    [menu addItem:tc.trackMenu];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // Web Panel Button
+    NSString *webTitle = [NSString stringWithFormat:@"🌐 Web Panelini Aç (Port: %d)", port];
+    NSMenuItem *webItem = [[NSMenuItem alloc] initWithTitle:webTitle action:@selector(menuOpenWeb:) keyEquivalent:@"w"];
+    [webItem setTarget:tc];
+    [menu addItem:webItem];
+
+    // Skip Track Button
+    NSMenuItem *skipItem = [[NSMenuItem alloc] initWithTitle:@"⏩ Şarkıyı Hemen Geç" action:@selector(menuSkipTrack:) keyEquivalent:@"s"];
+    [skipItem setTarget:tc];
+    [menu addItem:skipItem];
+
+    // Auto-Skip Toggle Button
+    NSString *autoSkipTitle = autoSkip ? @"⚡ Otomatik Geçiş: [AÇIK]" : @"⚡ Otomatik Geçiş: [KAPALI]";
+    tc.autoSkipMenu = [[NSMenuItem alloc] initWithTitle:autoSkipTitle action:@selector(menuToggleAutoSkip:) keyEquivalent:@"a"];
+    [tc.autoSkipMenu setTarget:tc];
+    [menu addItem:tc.autoSkipMenu];
+
+    // Sync API Button
+    NSMenuItem *syncItem = [[NSMenuItem alloc] initWithTitle:@"🔄 API Senkronize Et" action:@selector(menuSync:) keyEquivalent:@"r"];
+    [syncItem setTarget:tc];
+    [menu addItem:syncItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // Quit Button
+    NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"❌ Çıkış Yap" action:@selector(menuQuit:) keyEquivalent:@"q"];
+    [quitItem setTarget:tc];
+    [menu addItem:quitItem];
+
+    tc.statusItem.menu = menu;
 }
 
 void UpdateTrayTrack(const char *trackText, int isMatched) {
-    NSString *nsText = [NSString stringWithUTF8String:trackText];
+    if (!trackText) return;
+
+    NSString *str = [NSString stringWithUTF8String:trackText];
+    if (!str) {
+        str = [NSString stringWithCString:trackText encoding:NSISOLatin1StringEncoding];
+    }
+    if (!str || [str length] == 0) {
+        str = @"-";
+    }
+
+    NSString *safeTrackStr = [str copy];
+
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (g_trackMenu) {
-            g_trackMenu.title = [NSString stringWithFormat:@"Çalan: %@", nsText];
+        TrayController *tc = [TrayController shared];
+        if (tc.trackMenu) {
+            tc.trackMenu.title = [NSString stringWithFormat:@"Çalan: %@", safeTrackStr];
         }
-        if (g_statusItem && g_statusItem.button) {
+        if (tc.statusItem && tc.statusItem.button) {
             if (isMatched) {
-                g_statusItem.button.title = @"🚨 OE [UYARI]";
+                tc.statusItem.button.title = @"🚨 OE [UYARI]";
             } else {
-                g_statusItem.button.title = @"🎧 OE";
+                tc.statusItem.button.title = @"🎧 OE";
             }
         }
     });
@@ -122,21 +154,24 @@ void UpdateTrayTrack(const char *trackText, int isMatched) {
 
 void UpdateTrayAutoSkip(int autoSkip) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (g_autoSkipMenu) {
-            g_autoSkipMenu.title = autoSkip ? @"⚡ Otomatik Geçiş: [AÇIK]" : @"⚡ Otomatik Geçiş: [KAPALI]";
+        TrayController *tc = [TrayController shared];
+        if (tc.autoSkipMenu) {
+            tc.autoSkipMenu.title = autoSkip ? @"⚡ Otomatik Geçiş: [AÇIK]" : @"⚡ Otomatik Geçiş: [KAPALI]";
         }
     });
 }
 
 void OpenBrowserURL(const char *urlStr) {
+    if (!urlStr) return;
     NSString *str = [NSString stringWithUTF8String:urlStr];
+    if (!str) return;
+
+    NSString *safeURL = [str copy];
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:str]];
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:safeURL]];
     });
 }
 
 void RunCocoaApp(void) {
-    @autoreleasepool {
-        [NSApp run];
-    }
+    [NSApp run];
 }
