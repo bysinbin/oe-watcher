@@ -6,7 +6,8 @@
     enabled: true,
     persons: [],
     aliases: {},
-    excludeList: []
+    excludeList: [],
+    keywords: []
   };
 
   let compiledMatchers = [];
@@ -165,6 +166,7 @@
       config.persons = response.persons || [];
       config.aliases = response.aliases || {};
       config.excludeList = response.excludeList || [];
+      config.keywords = response.keywords || [];
 
       if (!config.enabled) {
         cleanAllShields();
@@ -179,7 +181,7 @@
         return;
       }
 
-      if (config.persons.length === 0) {
+      if (config.persons.length === 0 && (!config.keywords || config.keywords.length === 0)) {
         return;
       }
 
@@ -229,6 +231,25 @@
           matchedKeyword: alias,
           category: 'Özel Tanımlı',
           topics: ['Alias Eşleşmesi'],
+          regex: regex
+        });
+      }
+    }
+
+    // 3. Custom Keywords / Hashtags
+    if (config.keywords) {
+      for (const kw of config.keywords) {
+        const cleanKw = (kw || '').trim();
+        const folded = foldTurkish(cleanKw);
+        if (folded.length < 2 || excludeSet.has(folded)) continue;
+        const escaped = folded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(?:^|[^a-zçğıöşü0-9])${escaped}(?:$|[^a-zçğıöşü0-9])`, 'i');
+
+        compiledMatchers.push({
+          displayName: cleanKw,
+          matchedKeyword: cleanKw,
+          category: 'Özel Kelime',
+          topics: ['Engellenen Kelime / Tag'],
           regex: regex
         });
       }

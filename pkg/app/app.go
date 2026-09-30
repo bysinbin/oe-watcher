@@ -332,6 +332,24 @@ func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaI
 		fmt.Sprintf("Çalan: %s", trackDesc),
 	)
 
+	// Send Discord / Telegram Webhook alert if configured
+	if a.cfg != nil {
+		notifier.SendWebhookAlert(
+			a.cfg.DiscordWebhookURL,
+			a.cfg.TelegramBotToken,
+			a.cfg.TelegramChatID,
+			"🚨 Kara Listedeki Kişi / İçerik Tespit Edildi!",
+			fmt.Sprintf("%s adlı kişi çalınan medyada tespit edildi.", match.Person.DisplayName),
+			map[string]string{
+				"Kişi / Başlık": match.Person.DisplayName,
+				"Kategori":      match.Category,
+				"Konular":       topicsStr,
+				"Parça / Video": trackDesc,
+				"Uygulama":      track.App,
+			},
+		)
+	}
+
 	// 3. Skip handling
 	if autoSkip {
 		fmt.Println("\033[1;32m⏩ Otomatik Geçiş devrede: Şarkı geçiliyor...\033[0m")
@@ -341,7 +359,9 @@ func (a *App) handleMatchDetected(match *models.MatchResult, track models.MediaI
 			a.recordHistoryWithDetails(track, match.Person, "skip_failed", false, match.Category, match.Topics, "Geçiş Başarısız")
 		} else {
 			a.recordHistoryWithDetails(track, match.Person, "auto_skipped", true, match.Category, match.Topics, "Otomatik Geçildi")
-			notifier.ShowNotification("⏩ Şarkı Otomatik Geçildi", match.Person.DisplayName, track.Title)
+			if a.cfg == nil || a.cfg.EnableSkipToast {
+				notifier.ShowNotification("⏩ Şarkı Otomatik Geçildi", match.Person.DisplayName, track.Title)
+			}
 		}
 		return
 	}
@@ -832,3 +852,42 @@ func (a *App) RemoveExclude(name string) bool {
 	}
 	return removed
 }
+
+// AddKeyword adds a custom keyword or hashtag to the block list.
+func (a *App) AddKeyword(keyword string) error {
+	err := a.rulesMgr.AddKeyword(keyword)
+	if err == nil {
+		go a.notifyStateChanged()
+	}
+	return err
+}
+
+// RemoveKeyword removes a custom keyword from the block list.
+func (a *App) RemoveKeyword(keyword string) bool {
+	err := a.rulesMgr.RemoveKeyword(keyword)
+	if err == nil {
+		go a.notifyStateChanged()
+		return true
+	}
+	return false
+}
+
+// GetKeywords returns the custom blocked keywords.
+func (a *App) GetKeywords() []string {
+	return a.rulesMgr.GetKeywords()
+}
+
+// SetWebhookSettings updates Discord/Telegram and SkipToast settings.
+func (a *App) SetWebhookSettings(discordURL, tgToken, tgChatID string, enableSkipToast bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.cfg != nil {
+		a.cfg.DiscordWebhookURL = strings.TrimSpace(discordURL)
+		a.cfg.TelegramBotToken = strings.TrimSpace(tgToken)
+		a.cfg.TelegramChatID = strings.TrimSpace(tgChatID)
+		a.cfg.EnableSkipToast = enableSkipToast
+		a.saveConfigLocked()
+	}
+	go a.notifyStateChanged()
+}
+

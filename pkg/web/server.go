@@ -16,6 +16,7 @@ import (
 	"medya-filter/pkg/app"
 	"medya-filter/pkg/config"
 	"medya-filter/pkg/models"
+	"medya-filter/pkg/notifier"
 )
 
 //go:embed static/*
@@ -114,12 +115,15 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/logout", s.handleLogout)
 	mux.HandleFunc("/api/extension/sync", s.handleExtensionSync)
 	mux.HandleFunc("/api/extension/exclude", s.handleRuleExclude)
+	mux.HandleFunc("/api/extension/keyword", s.handleRuleKeyword)
+	mux.HandleFunc("/api/extension/person", s.handleExtensionPerson)
 
 	// Protected API endpoints
 	mux.HandleFunc("/api/events", s.authMiddleware(s.handleEvents))
 	mux.HandleFunc("/api/status", s.authMiddleware(s.handleStatus))
 	mux.HandleFunc("/api/skip", s.authMiddleware(s.handleSkip))
 	mux.HandleFunc("/api/settings", s.authMiddleware(s.handleSettings))
+	mux.HandleFunc("/api/settings/test-webhook", s.authMiddleware(s.handleTestWebhook))
 	mux.HandleFunc("/api/config", s.authMiddleware(s.handleConfig))
 	mux.HandleFunc("/api/snooze", s.authMiddleware(s.handleSnooze))
 	mux.HandleFunc("/api/player/play-pause", s.authMiddleware(s.handlePlayPause))
@@ -134,6 +138,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/rules/person", s.authMiddleware(s.handleRulePerson))
 	mux.HandleFunc("/api/rules/alias", s.authMiddleware(s.handleRuleAlias))
 	mux.HandleFunc("/api/rules/exclude", s.authMiddleware(s.handleRuleExclude))
+	mux.HandleFunc("/api/rules/keyword", s.authMiddleware(s.handleRuleKeyword))
 
 	// Embedded Static files
 	staticSub, err := fs.Sub(staticFS, "static")
@@ -336,12 +341,16 @@ func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
 }
 
 type SettingsRequest struct {
-	AutoSkip         *bool    `json:"auto_skip,omitempty"`
-	EnableDialog     *bool    `json:"enable_dialog,omitempty"`
-	FuzzyMatching    *bool    `json:"fuzzy_matching,omitempty"`
-	FuzzyThreshold   *float64 `json:"fuzzy_threshold,omitempty"`
-	ActiveCategories []string `json:"active_categories,omitempty"`
-	ActiveTopics     []string `json:"active_topics,omitempty"`
+	AutoSkip          *bool    `json:"auto_skip,omitempty"`
+	EnableDialog      *bool    `json:"enable_dialog,omitempty"`
+	FuzzyMatching     *bool    `json:"fuzzy_matching,omitempty"`
+	FuzzyThreshold    *float64 `json:"fuzzy_threshold,omitempty"`
+	ActiveCategories  []string `json:"active_categories,omitempty"`
+	ActiveTopics      []string `json:"active_topics,omitempty"`
+	DiscordWebhookURL *string  `json:"discord_webhook_url,omitempty"`
+	TelegramBotToken  *string  `json:"telegram_bot_token,omitempty"`
+	TelegramChatID    *string  `json:"telegram_chat_id,omitempty"`
+	EnableSkipToast   *bool    `json:"enable_skip_toast,omitempty"`
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -389,6 +398,33 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			topics = req.ActiveTopics
 		}
 		s.app.SetFilters(cats, topics)
+	}
+
+	if req.DiscordWebhookURL != nil || req.TelegramBotToken != nil || req.TelegramChatID != nil || req.EnableSkipToast != nil {
+		cfg := s.app.GetConfig()
+		dURL := ""
+		tgToken := ""
+		tgChat := ""
+		skipToast := true
+		if cfg != nil {
+			dURL = cfg.DiscordWebhookURL
+			tgToken = cfg.TelegramBotToken
+			tgChat = cfg.TelegramChatID
+			skipToast = cfg.EnableSkipToast
+		}
+		if req.DiscordWebhookURL != nil {
+			dURL = *req.DiscordWebhookURL
+		}
+		if req.TelegramBotToken != nil {
+			tgToken = *req.TelegramBotToken
+		}
+		if req.TelegramChatID != nil {
+			tgChat = *req.TelegramChatID
+		}
+		if req.EnableSkipToast != nil {
+			skipToast = *req.EnableSkipToast
+		}
+		s.app.SetWebhookSettings(dURL, tgToken, tgChat, skipToast)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -846,7 +882,162 @@ func (s *Server) handleExtensionSync(w http.ResponseWriter, r *http.Request) {
 		"persons":      list,
 		"aliases":      snap.Aliases,
 		"exclude_list": snap.ExcludeList,
+		"keywords":     snap.Keywords,
 	})
 }
+
+type KeywordReq struct {
+	Keyword string `json:"keyword"`
+}
+
+func (s *Server) handleRuleKeyword(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodPost {
+		var req KeywordReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		err := s.app.AddKeyword(req.Keyword)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		return
+	} else if r.Method == http.MethodDelete {
+		var req KeywordReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ok := s.app.RemoveKeyword(req.Keyword)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"success": ok})
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+type ExtensionPersonReq struct {
+	Name string `json:"name"`
+}
+
+func (s *Server) handleExtensionPerson(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ExtensionPersonReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	clean := strings.TrimSpace(req.Name)
+	if clean == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "İsim boş olamaz"})
+		return
+	}
+
+	cp, err := s.app.AddCustomPerson(clean, []string{"Eklenti"}, []string{"Tarayıcıdan Eklendi"}, nil)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "person": cp})
+}
+
+type TestWebhookReq struct {
+	Type       string `json:"type"` // "discord" or "telegram"
+	WebhookURL string `json:"webhook_url"`
+	BotToken   string `json:"bot_token"`
+	ChatID     string `json:"chat_id"`
+}
+
+func (s *Server) handleTestWebhook(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req TestWebhookReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if req.Type == "discord" {
+		url := strings.TrimSpace(req.WebhookURL)
+		if url == "" && s.app.GetConfig() != nil {
+			url = s.app.GetConfig().DiscordWebhookURL
+		}
+		if url == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Discord Webhook URL belirtilmedi"})
+			return
+		}
+		err := notifier.SendDiscordNotification(
+			url,
+			"🔔 Test Bildirimi: OE Watcher",
+			"Discord webhook entegrasyonu başarıyla doğrulandı!",
+			map[string]string{
+				"Durum": "Aktif",
+				"Zaman": time.Now().Format("15:04:05"),
+			},
+		)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Discord test bildirimi başarıyla gönderildi!"})
+		return
+	} else if req.Type == "telegram" {
+		token := strings.TrimSpace(req.BotToken)
+		chatID := strings.TrimSpace(req.ChatID)
+		if (token == "" || chatID == "") && s.app.GetConfig() != nil {
+			token = s.app.GetConfig().TelegramBotToken
+			chatID = s.app.GetConfig().TelegramChatID
+		}
+		if token == "" || chatID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Telegram Bot Token veya Chat ID belirtilmedi"})
+			return
+		}
+		msg := "<b>🔔 Test Bildirimi: OE Watcher</b>\nTelegram bildirim entegrasyonu başarıyla doğrulandı!\n\n• <b>Durum:</b> Aktif\n• <b>Zaman:</b> " + time.Now().Format("15:04:05")
+		err := notifier.SendTelegramNotification(token, chatID, msg)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Telegram test bildirimi başarıyla gönderildi!"})
+		return
+	}
+
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Geçersiz webhook türü ('discord' veya 'telegram' olmalı)"})
+}
+
 
 

@@ -14,32 +14,40 @@ const (
 )
 
 type Config struct {
-	ApiURL         string  `json:"api_url"`
-	WebPort        int     `json:"web_port"`
-	BindAddress    string  `json:"bind_address"`
-	WebPassword    string  `json:"web_password"`
-	AutoSkip       bool    `json:"auto_skip"`
-	EnableDialog   bool    `json:"enable_dialog"`
-	PollIntervalMs int     `json:"poll_interval_ms"`
-	Category       string  `json:"category"`
-	FuzzyMatching  bool    `json:"fuzzy_matching"`
-	FuzzyThreshold float64 `json:"fuzzy_threshold"`
-	AutoSyncHours  int     `json:"auto_sync_hours"`
+	ApiURL            string  `json:"api_url"`
+	WebPort           int     `json:"web_port"`
+	BindAddress       string  `json:"bind_address"`
+	WebPassword       string  `json:"web_password"`
+	AutoSkip          bool    `json:"auto_skip"`
+	EnableDialog      bool    `json:"enable_dialog"`
+	PollIntervalMs    int     `json:"poll_interval_ms"`
+	Category          string  `json:"category"`
+	FuzzyMatching     bool    `json:"fuzzy_matching"`
+	FuzzyThreshold    float64 `json:"fuzzy_threshold"`
+	AutoSyncHours     int     `json:"auto_sync_hours"`
+	DiscordWebhookURL string  `json:"discord_webhook_url"`
+	TelegramBotToken  string  `json:"telegram_bot_token"`
+	TelegramChatID    string  `json:"telegram_chat_id"`
+	EnableSkipToast   bool    `json:"enable_skip_toast"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
-		ApiURL:         DefaultApiURL,
-		WebPort:        8080,
-		BindAddress:    "127.0.0.1", // Sadece yerel makineden erişim (Ağdaki başkaları IP yazsa bile bağlanamaz)
-		WebPassword:    "admin",     // Web panelini korumak için parola
-		AutoSkip:       false,
-		EnableDialog:   true,
-		PollIntervalMs: 1500,
-		Category:       "HEPSİ",
-		FuzzyMatching:  true,
-		FuzzyThreshold: 0.85,
-		AutoSyncHours:  12,
+		ApiURL:            DefaultApiURL,
+		WebPort:           8080,
+		BindAddress:       "127.0.0.1", // Sadece yerel makineden erişim (Ağdaki başkaları IP yazsa bile bağlanamaz)
+		WebPassword:       "admin",     // Web panelini korumak için parola
+		AutoSkip:          false,
+		EnableDialog:      true,
+		PollIntervalMs:    1500,
+		Category:          "HEPSİ",
+		FuzzyMatching:     true,
+		FuzzyThreshold:    0.85,
+		AutoSyncHours:     12,
+		DiscordWebhookURL: "",
+		TelegramBotToken:  "",
+		TelegramChatID:    "",
+		EnableSkipToast:   true,
 	}
 }
 

@@ -74,14 +74,25 @@ Tarayıcı eklentisi ([extension/](file:///Users/feritetem/Desktop/medya-filter/
    - **IP İzolasyonu (`bind_address: "127.0.0.1"`):** Yalnızca kendi bilgisayarınızdan erişilebilir.
    - **Parola Koruması (`web_password`):** Web kontrol paneli parola ile korunur (varsayılan: `admin`).
 
-5. **Özel Kurallar Yönetimi:**
+7. **Özel Kurallar & Kelime/Hashtag Engelleme:**
    - **➕ Elle Kişi Ekleme:** API'de yer almayan kişileri kara listeye dahil etme.
    - **🔀 Alias (Mahlas) Eşleştirme:** Takma ad girerek (`Süperstar` ➔ `Ajda Pekkan`) hedef kişiyle bağlama.
+   - **🏷️ Özel Kelime / Hashtag Engelleme:** Belirli kelimeleri (`#boykot`, `sponsorlu` vb.) medyada veya web'de filtreleme.
    - **🛡️ Exclude List (Beyaz Liste):** URL veya isim tanımlayarak (`https://github.com/bysinbin/oe-watcher`, `Beşiktaş JK` vb.) muaf tutma.
 
-6. **Gelişmiş Eşleştirme & Katkıda Bulunanlar Taraması:**
-   - Türkçe karakter normalizasyonu ve Levenshtein Bulanık Eşleştirme (%85 tolerans).
-   - YouTube açıklaması ve şarkı künyesindeki prodüktör, aranjör, söz/müzik yazarlarını tarar.
+8. **🖱️ Tarayıcıda Sağ Tık (Context Menu) Kolaylığı:**
+   - Herhangi bir web sayfasında seçtiğiniz metne sağ tıklayarak tek hareketle **"Kara Listeye Ekle"**, **"Kelimeyi Engelle"** veya **"Beyaz Listeye Ekle"** diyebilirsiniz.
+   - Bulunduğunuz web sitesini / alan adını doğrudan sağ tık menüsünden muafiyete alabilirsiniz.
+
+9. **🖼️ Derin Görsel & Küçük Resim (Thumbnail & Avatar) Kalkanlaması:**
+   - Kalkanlanan YouTube videoları, tweet fotoğrafları ve kullanıcı avatarları 28px derin bulanıklık ile sansürlenir; onay vermeden önizlemeler görünmez.
+
+10. **🔔 Discord & Telegram Webhook Canlı Bildirimleri:**
+    - Tespit edilen sanatçı veya engellenen içerikler Discord kanalınıza zengin embed kartı olarak veya Telegram grubunuza/sohbetinize anında alarm mesajı olarak iletilir.
+    - Web panelindeki Ayarlar menüsünden tek tıkla test bildirimi gönderilebilir.
+
+11. **📊 Görsel Analitik ve Platform Dağılım Grafikleri:**
+    - Geçmiş raporunda en çok engellenen sanatçılar ve tespitlerin hangi platformlardan (Spotify, YouTube, Chrome, Safari, vb.) yapıldığını gösteren şık, görsel bar grafikleri.
 
 ---
 
@@ -128,7 +139,11 @@ Tarayıcı eklentisi ([extension/](file:///Users/feritetem/Desktop/medya-filter/
   "category": "HEPSİ",
   "fuzzy_matching": true,
   "fuzzy_threshold": 0.85,
-  "auto_sync_hours": 12
+  "auto_sync_hours": 12,
+  "discord_webhook_url": "https://discord.com/api/webhooks/...",
+  "telegram_bot_token": "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ",
+  "telegram_chat_id": "-100123456789",
+  "enable_skip_toast": true
 }
 ```
 
@@ -138,6 +153,9 @@ Tarayıcı eklentisi ([extension/](file:///Users/feritetem/Desktop/medya-filter/
 * **`auto_skip`**: `true` yapılırsa eşleşen şarkılar sormadan hemen atlanır.
 * **`enable_dialog`**: `true` olduğunda 3 seçenekli ("Şarkıyı Geç", "1 Saat Ertele", "Dinlemeye Devam") onay penceresi açılır.
 * **`auto_sync_hours`**: Belirtilen saat aralığında (varsayılan: 12 saat) arka planda sessizce yeni kara liste kayıtlarını tazeler.
+* **`discord_webhook_url`**: Eşleşmelerde zengin embed bildirimi gönderilecek Discord webhook adresi.
+* **`telegram_bot_token` & `telegram_chat_id`**: Anlık alarm gönderilecek Telegram bot bilgileri.
+* **`enable_skip_toast`**: Otomatik geçiş anında mini masaüstü bildiriminin gösterilip gösterilmeyeceği (`true` / `false`).
 
 ---
 

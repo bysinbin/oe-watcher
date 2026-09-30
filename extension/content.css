@@ -19,6 +19,24 @@
   transition: filter 0.25s ease, opacity 0.25s ease !important;
 }
 
+/* Deep Thumbnail, Video & Avatar Shielding */
+.oe-shielded-container img,
+.oe-shielded-container video,
+.oe-shielded-container ytd-thumbnail,
+.oe-shielded-container [data-testid="tweetPhoto"],
+.oe-shielded-container [data-testid="UserAvatar-Container"] {
+  filter: blur(28px) grayscale(90%) brightness(0.3) !important;
+  opacity: 0.08 !important;
+  pointer-events: none !important;
+}
+
+.oe-shielded-thumbnail {
+  filter: blur(24px) grayscale(80%) brightness(0.4) !important;
+  opacity: 0.15 !important;
+  pointer-events: none !important;
+  transition: filter 0.25s ease !important;
+}
+
 /* Revealed container state: fully unblurred, 100% visible and interactive */
 .oe-revealed-container {
   overflow: visible !important;

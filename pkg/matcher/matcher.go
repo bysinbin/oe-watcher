@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	artistSeparators = regexp.MustCompile(`(?i)\s*(?:,|&|feat\.?|ft\.?|vs\.?|with|\/|\bx\b|\bve\b|\+)\s*`)
+	artistSeparators = regexp.MustCompile(`(?i)\s*(?:,|&|feat\.?|ft\.?|vs\.?|with|\/|\bx\b|\bve\b|\+|\bprod\.?\s*(?:by)?\b|\bbeat\s*(?:by)?\b|\bcredits?\b|\bcomposer\b|\blyricist\b)\s*`)
 	nonAlphaNumeric  = regexp.MustCompile(`[^\p{L}\p{N}\s]`)
 	multipleSpaces   = regexp.MustCompile(`\s+`)
 )
@@ -224,6 +224,17 @@ func (m *Matcher) Match(track models.MediaInfo) *models.MatchResult {
 			if m.rulesMgr.IsExcluded(part) {
 				return nil
 			}
+		}
+
+		// Custom Keywords / Hashtags check
+		fullMediaText := fmt.Sprintf("%s %s %s", track.Artist, track.Title, track.Contributors)
+		if matchedKw, ok := m.rulesMgr.MatchesKeyword(fullMediaText); ok {
+			kwPerson := models.Person{
+				DisplayName: matchedKw,
+				Tags:        []string{"Özel Kelime"},
+				Topics:      []string{"Özel Engellenen Kelime"},
+			}
+			return m.buildResult(kwPerson, matchedKw, track)
 		}
 	}
 

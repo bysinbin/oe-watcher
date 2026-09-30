@@ -61,6 +61,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const cfgWebPort = document.getElementById('cfgWebPort');
   const cfgApiUrl = document.getElementById('cfgApiUrl');
   const cfgAutoSyncHours = document.getElementById('cfgAutoSyncHours');
+  const cfgEnableSkipToast = document.getElementById('cfgEnableSkipToast');
+  const cfgDiscordWebhook = document.getElementById('cfgDiscordWebhook');
+  const btnTestDiscord = document.getElementById('btnTestDiscord');
+  const cfgTelegramBotToken = document.getElementById('cfgTelegramBotToken');
+  const cfgTelegramChatID = document.getElementById('cfgTelegramChatID');
+  const btnTestTelegram = document.getElementById('btnTestTelegram');
+  const platformBarsContainer = document.getElementById('platformBarsContainer');
+  const topBlockedBarsContainer = document.getElementById('topBlockedBarsContainer');
+  const customKeywordsList = document.getElementById('customKeywordsList');
+  const formAddKeyword = document.getElementById('formAddKeyword');
 
   // Rules I/O Elements
   const btnExportRules = document.getElementById('btnExportRules');
@@ -457,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (cfgAutoSkip) cfgAutoSkip.checked = !!cfg.auto_skip;
           if (cfgEnableDialog) cfgEnableDialog.checked = !!cfg.enable_dialog;
           if (cfgFuzzyMatching) cfgFuzzyMatching.checked = cfg.fuzzy_matching !== false;
+          if (cfgEnableSkipToast) cfgEnableSkipToast.checked = cfg.enable_skip_toast !== false;
           const th = cfg.fuzzy_threshold ? Math.round(cfg.fuzzy_threshold * 100) : 85;
           if (cfgFuzzyThreshold) cfgFuzzyThreshold.value = th;
           if (fuzzyThresholdVal) fuzzyThresholdVal.textContent = `%${th}`;
@@ -466,6 +477,9 @@ document.addEventListener('DOMContentLoaded', () => {
           if (cfgWebPort) cfgWebPort.value = cfg.web_port || 8080;
           if (cfgApiUrl) cfgApiUrl.value = cfg.api_url || '';
           if (cfgAutoSyncHours) cfgAutoSyncHours.value = cfg.auto_sync_hours !== undefined ? cfg.auto_sync_hours : 12;
+          if (cfgDiscordWebhook) cfgDiscordWebhook.value = cfg.discord_webhook_url || '';
+          if (cfgTelegramBotToken) cfgTelegramBotToken.value = cfg.telegram_bot_token || '';
+          if (cfgTelegramChatID) cfgTelegramChatID.value = cfg.telegram_chat_id || '';
 
           if (settingsModal) settingsModal.style.display = 'flex';
         })
@@ -489,6 +503,69 @@ document.addEventListener('DOMContentLoaded', () => {
         fuzzyThresholdVal.textContent = `%${cfgFuzzyThreshold.value}`;
       });
     }
+
+    // Webhook Test Handlers
+    if (btnTestDiscord) {
+      btnTestDiscord.addEventListener('click', async () => {
+        const url = cfgDiscordWebhook ? cfgDiscordWebhook.value.trim() : '';
+        if (!url) {
+          showToast('Lütfen önce bir Discord Webhook URL girin.', true);
+          return;
+        }
+        btnTestDiscord.disabled = true;
+        btnTestDiscord.textContent = 'Gönderiliyor...';
+        try {
+          const res = await fetch('/api/settings/test-webhook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'discord', webhook_url: url })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            showToast('✅ ' + data.message);
+          } else {
+            showToast('❌ ' + (data.error || 'Discord bildirimi gönderilemedi'), true);
+          }
+        } catch (err) {
+          showToast('Bağlantı hatası: ' + err.message, true);
+        } finally {
+          btnTestDiscord.disabled = false;
+          btnTestDiscord.textContent = 'Discord Testi';
+        }
+      });
+    }
+
+    if (btnTestTelegram) {
+      btnTestTelegram.addEventListener('click', async () => {
+        const token = cfgTelegramBotToken ? cfgTelegramBotToken.value.trim() : '';
+        const chatID = cfgTelegramChatID ? cfgTelegramChatID.value.trim() : '';
+        if (!token || !chatID) {
+          showToast('Lütfen Telegram Bot Token ve Chat ID girin.', true);
+          return;
+        }
+        btnTestTelegram.disabled = true;
+        btnTestTelegram.textContent = 'Gönderiliyor...';
+        try {
+          const res = await fetch('/api/settings/test-webhook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'telegram', bot_token: token, chat_id: chatID })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            showToast('✅ ' + data.message);
+          } else {
+            showToast('❌ ' + (data.error || 'Telegram bildirimi gönderilemedi'), true);
+          }
+        } catch (err) {
+          showToast('Bağlantı hatası: ' + err.message, true);
+        } finally {
+          btnTestTelegram.disabled = false;
+          btnTestTelegram.textContent = 'Telegram Testi';
+        }
+      });
+    }
+
     if (settingsForm) {
       settingsForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -503,6 +580,10 @@ document.addEventListener('DOMContentLoaded', () => {
           web_port: cfgWebPort ? parseInt(cfgWebPort.value) : 8080,
           api_url: cfgApiUrl ? cfgApiUrl.value.trim() : '',
           auto_sync_hours: cfgAutoSyncHours ? parseInt(cfgAutoSyncHours.value) : 12,
+          discord_webhook_url: cfgDiscordWebhook ? cfgDiscordWebhook.value.trim() : '',
+          telegram_bot_token: cfgTelegramBotToken ? cfgTelegramBotToken.value.trim() : '',
+          telegram_chat_id: cfgTelegramChatID ? cfgTelegramChatID.value.trim() : '',
+          enable_skip_toast: cfgEnableSkipToast ? cfgEnableSkipToast.checked : true,
           bind_address: '127.0.0.1'
         };
 
@@ -813,6 +894,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (histStatAutoSkips) histStatAutoSkips.textContent = data.stats.total_auto_skips || 0;
         if (histStatManualSkips) histStatManualSkips.textContent = data.stats.total_manual_skips || 0;
         if (histStatSnoozed) histStatSnoozed.textContent = data.stats.total_snoozed || 0;
+        renderAnalytics(data.stats, allHistoryItems);
       }
 
       if (historyFooter) {
@@ -824,6 +906,70 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('Failed to fetch history:', err);
+    }
+  }
+
+  function renderAnalytics(stats, items) {
+    if (!platformBarsContainer || !topBlockedBarsContainer) return;
+
+    const colors = ['fill-red', 'fill-blue', 'fill-green', 'fill-amber', 'fill-purple'];
+
+    // 1. Platform analytics from history items
+    const platformCounts = {};
+    if (items && items.length > 0) {
+      items.forEach(it => {
+        let app = (it.track && it.track.app) ? it.track.app.trim() : 'Diğer';
+        if (!app) app = 'Diğer';
+        platformCounts[app] = (platformCounts[app] || 0) + 1;
+      });
+    }
+
+    const platformEntries = Object.entries(platformCounts).sort((a, b) => b[1] - a[1]);
+    const maxPlatform = platformEntries.length > 0 ? platformEntries[0][1] : 1;
+
+    if (platformEntries.length === 0) {
+      platformBarsContainer.innerHTML = '<div class="empty-mini-state">Henüz veri yok</div>';
+    } else {
+      platformBarsContainer.innerHTML = platformEntries.slice(0, 5).map(([app, count], idx) => {
+        const pct = Math.round((count / maxPlatform) * 100);
+        const colorClass = colors[idx % colors.length];
+        return `
+          <div class="mini-bar-item">
+            <div class="mini-bar-header">
+              <span class="mini-bar-label">${escapeHTML(app)}</span>
+              <span class="mini-bar-count">${count}</span>
+            </div>
+            <div class="mini-bar-track">
+              <div class="mini-bar-fill ${colorClass}" style="width: ${pct}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 2. Top Blocked from stats
+    const topPersons = (stats && stats.top_persons) ? stats.top_persons : {};
+    const topEntries = Object.entries(topPersons).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const maxTop = topEntries.length > 0 ? topEntries[0][1] : 1;
+
+    if (topEntries.length === 0) {
+      topBlockedBarsContainer.innerHTML = '<div class="empty-mini-state">Henüz veri yok</div>';
+    } else {
+      topBlockedBarsContainer.innerHTML = topEntries.map(([person, count], idx) => {
+        const pct = Math.round((count / maxTop) * 100);
+        const colorClass = colors[idx % colors.length];
+        return `
+          <div class="mini-bar-item">
+            <div class="mini-bar-header">
+              <span class="mini-bar-label">${escapeHTML(person)}</span>
+              <span class="mini-bar-count">${count} kez</span>
+            </div>
+            <div class="mini-bar-track">
+              <div class="mini-bar-fill ${colorClass}" style="width: ${pct}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
     }
   }
 
@@ -1117,6 +1263,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     }
+
+    // Form 4: Add Keyword
+    const formAddKeyword = document.getElementById('formAddKeyword');
+    if (formAddKeyword) {
+      formAddKeyword.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const kwInput = document.getElementById('keywordInput');
+        const keyword = kwInput ? kwInput.value.trim() : '';
+        if (!keyword) return;
+
+        try {
+          const res = await fetch('/api/rules/keyword', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            formAddKeyword.reset();
+            showToast(`🏷️ "${keyword}" kelimesi engelleme listesine eklendi.`);
+            loadRules();
+          } else {
+            alert('Hata: ' + (data.error || 'Eklenemedi'));
+          }
+        } catch (err) {
+          alert('Bağlantı hatası: ' + err.message);
+        }
+      });
+    }
   }
 
   async function loadRules() {
@@ -1198,6 +1373,25 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           `;
         }).join('');
+      }
+    }
+
+    // Render Custom Keywords
+    const customKeywordsList = document.getElementById('customKeywordsList');
+    if (customKeywordsList) {
+      const keywords = rules.keywords || [];
+      if (keywords.length === 0) {
+        customKeywordsList.innerHTML = '<div class="empty-state" style="padding: 10px;">Henüz özel engellenen kelime yok.</div>';
+      } else {
+        customKeywordsList.innerHTML = keywords.map(kw => `
+          <div class="custom-item">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="custom-item-name">🏷️ ${escapeHTML(kw)}</span>
+              <span class="count-badge" style="background: rgba(225, 29, 72, 0.15); color: #f43f5e; border: 1px solid rgba(225, 29, 72, 0.3); font-size: 0.72rem; padding: 2px 7px;">Özel Kelime / Tag</span>
+            </div>
+            <button class="btn-icon-del" onclick="deleteCustomKeyword('${escapeHTML(kw)}')" title="Sil">✕</button>
+          </div>
+        `).join('');
       }
     }
   }
@@ -1332,6 +1526,20 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ name })
       });
       showToast(`🗑️ "${name}" beyaz listeden çıkarıldı.`);
+      loadRules();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.deleteCustomKeyword = async (keyword) => {
+    try {
+      await fetch('/api/rules/keyword', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword })
+      });
+      showToast(`🗑️ "${keyword}" kelimesi silindi.`);
       loadRules();
     } catch (err) {
       console.error(err);

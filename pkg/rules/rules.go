@@ -47,6 +47,7 @@ type Manager struct {
 	Persons     []CustomPerson    `json:"custom_persons"`
 	Aliases     map[string]string `json:"aliases"`      // alias (lowercase folded) -> Target Name
 	ExcludeList []string          `json:"exclude_list"` // Names or artists to never match
+	Keywords    []string          `json:"keywords"`     // Custom keywords or hashtags to block/shield
 }
 
 func NewManager(dataDir string) *Manager {
@@ -60,6 +61,7 @@ func NewManager(dataDir string) *Manager {
 		Persons:     make([]CustomPerson, 0),
 		Aliases:     make(map[string]string),
 		ExcludeList: make([]string, 0),
+		Keywords:    make([]string, 0),
 	}
 
 	_ = m.Load()
@@ -82,6 +84,7 @@ func (m *Manager) Load() error {
 		CustomPersons []CustomPerson    `json:"custom_persons"`
 		Aliases       map[string]string `json:"aliases"`
 		ExcludeList   []string          `json:"exclude_list"`
+		Keywords      []string          `json:"keywords"`
 	}
 
 	var ff fileFormat
@@ -101,6 +104,10 @@ func (m *Manager) Load() error {
 	if m.ExcludeList == nil {
 		m.ExcludeList = make([]string, 0)
 	}
+	m.Keywords = ff.Keywords
+	if m.Keywords == nil {
+		m.Keywords = make([]string, 0)
+	}
 
 	return nil
 }
@@ -116,12 +123,14 @@ func (m *Manager) saveLocked() error {
 		CustomPersons []CustomPerson    `json:"custom_persons"`
 		Aliases       map[string]string `json:"aliases"`
 		ExcludeList   []string          `json:"exclude_list"`
+		Keywords      []string          `json:"keywords"`
 	}
 
 	ff := fileFormat{
 		CustomPersons: m.Persons,
 		Aliases:       m.Aliases,
 		ExcludeList:   m.ExcludeList,
+		Keywords:      m.Keywords,
 	}
 
 	data, err := json.MarshalIndent(ff, "", "  ")
@@ -322,11 +331,72 @@ func (m *Manager) IsExcluded(name string) bool {
 	return false
 }
 
+// AddKeyword adds a keyword or hashtag to the custom blocked words list.
+func (m *Manager) AddKeyword(keyword string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	clean := strings.TrimSpace(keyword)
+	if clean == "" {
+		return fmt.Errorf("anahtar kelime boş olamaz")
+	}
+
+	for _, k := range m.Keywords {
+		if strings.EqualFold(k, clean) {
+			return nil // already exists
+		}
+	}
+
+	m.Keywords = append(m.Keywords, clean)
+	return m.saveLocked()
+}
+
+// RemoveKeyword removes a keyword from the custom list.
+func (m *Manager) RemoveKeyword(keyword string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	clean := strings.TrimSpace(keyword)
+	filtered := make([]string, 0, len(m.Keywords))
+	for _, k := range m.Keywords {
+		if !strings.EqualFold(k, clean) {
+			filtered = append(filtered, k)
+		}
+	}
+	m.Keywords = filtered
+	return m.saveLocked()
+}
+
+// GetKeywords returns the list of custom blocked keywords.
+func (m *Manager) GetKeywords() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := make([]string, len(m.Keywords))
+	copy(res, m.Keywords)
+	return res
+}
+
+// MatchesKeyword checks if given text contains any custom blocked keyword.
+func (m *Manager) MatchesKeyword(text string) (string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	lowText := strings.ToLower(text)
+	for _, kw := range m.Keywords {
+		cleanKw := strings.ToLower(strings.TrimSpace(kw))
+		if cleanKw != "" && strings.Contains(lowText, cleanKw) {
+			return kw, true
+		}
+	}
+	return "", false
+}
+
 // GetSnapshot returns current custom rules snapshot.
 type RulesSnapshot struct {
 	CustomPersons []CustomPerson    `json:"custom_persons"`
 	Aliases       map[string]string `json:"aliases"`
 	ExcludeList   []string          `json:"exclude_list"`
+	Keywords      []string          `json:"keywords"`
 }
 
 func (m *Manager) GetSnapshot() RulesSnapshot {
@@ -337,6 +407,7 @@ func (m *Manager) GetSnapshot() RulesSnapshot {
 		CustomPersons: m.Persons,
 		Aliases:       m.Aliases,
 		ExcludeList:   m.ExcludeList,
+		Keywords:      m.Keywords,
 	}
 }
 
@@ -361,6 +432,7 @@ func (m *Manager) Export() ([]byte, error) {
 		CustomPersons: m.Persons,
 		Aliases:       m.Aliases,
 		ExcludeList:   m.ExcludeList,
+		Keywords:      m.Keywords,
 	}
 	return json.MarshalIndent(snap, "", "  ")
 }
@@ -383,6 +455,9 @@ func (m *Manager) Import(data []byte) error {
 	}
 	if snap.ExcludeList != nil {
 		m.ExcludeList = snap.ExcludeList
+	}
+	if snap.Keywords != nil {
+		m.Keywords = snap.Keywords
 	}
 
 	return m.saveLocked()

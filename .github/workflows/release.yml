@@ -1,0 +1,57 @@
+name: Release Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release All Platforms
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Install Zip & Utilities
+        run: |
+          which zip || brew install zip
+
+      - name: Build All Platforms & Browser Extensions
+        run: |
+          chmod +x ./build_all.sh ./build_app.sh ./build_extensions.sh
+          ./build_all.sh
+
+      - name: Archive macOS .app
+        run: |
+          cd dist
+          zip -q -r -y "OE-Watcher-macOS.zip" "OE Watcher.app"
+          echo "macOS archive created: dist/OE-Watcher-macOS.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "OE Watcher ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/OE-Watcher-macOS.zip
+            dist/oe-watcher-linux-amd64
+            dist/oe-watcher-linux-arm64
+            dist/oe-watcher-windows-amd64.exe
+            dist/oe-watcher-windows-arm64.exe
+            dist/oe-watcher-chrome.zip
+            dist/oe-watcher-firefox.xpi
+            dist/oe-watcher-firefox.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

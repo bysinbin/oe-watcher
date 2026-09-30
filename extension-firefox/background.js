@@ -25,8 +25,49 @@ async function loadBundledFallback() {
   }
 }
 
+// Context Menu Setup
+function setupContextMenus() {
+  if (!chrome.contextMenus) return;
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'oe-root',
+      title: 'OE Watcher Kalkanı',
+      contexts: ['selection', 'page']
+    });
+
+    chrome.contextMenus.create({
+      id: 'oe-add-person',
+      parentId: 'oe-root',
+      title: 'Seçili Kişiyi Kara Listeye Ekle: "%s"',
+      contexts: ['selection']
+    });
+
+    chrome.contextMenus.create({
+      id: 'oe-add-keyword',
+      parentId: 'oe-root',
+      title: 'Seçili Kelimeyi / Tag\'i Engelle: "%s"',
+      contexts: ['selection']
+    });
+
+    chrome.contextMenus.create({
+      id: 'oe-add-exclude-selection',
+      parentId: 'oe-root',
+      title: 'Seçili Metni Muaf Tut (Beyaz Liste): "%s"',
+      contexts: ['selection']
+    });
+
+    chrome.contextMenus.create({
+      id: 'oe-exclude-page',
+      parentId: 'oe-root',
+      title: 'Bu Sayfayı / Alan Adını Muaf Tut',
+      contexts: ['page']
+    });
+  });
+}
+
 // Initial setup on install
 chrome.runtime.onInstalled.addListener(async () => {
+  setupContextMenus();
   const current = await chrome.storage.local.get(['settings', 'persons']);
   if (!current.settings) {
     await chrome.storage.local.set({ settings: DEFAULT_CONFIG });
@@ -38,13 +79,86 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.storage.local.set({
       persons: fallback.persons,
       aliases: fallback.aliases,
-      excludeList: fallback.excludeList
+      excludeList: fallback.excludeList,
+      keywords: []
     });
   }
 
   // Then attempt live sync with local OE Watcher daemon
   await syncWithOEWatcher();
 });
+
+// Context Menu Click Handler
+if (chrome.contextMenus) {
+  chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    const { settings = DEFAULT_CONFIG } = await chrome.storage.local.get('settings');
+    const baseUrl = settings.apiUrl || "http://127.0.0.1:8080";
+    const selectedText = (info.selectionText || '').trim();
+
+    if (info.menuItemId === 'oe-add-person' && selectedText) {
+      try {
+        await fetch(`${baseUrl}/api/extension/person`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: selectedText })
+        });
+        await syncWithOEWatcher();
+        if (tab && tab.id) {
+          chrome.tabs.sendMessage(tab.id, { type: 'RESCAN' }).catch(() => {});
+        }
+      } catch (e) {
+        console.error('Failed to add person via context menu:', e);
+      }
+    } else if (info.menuItemId === 'oe-add-keyword' && selectedText) {
+      try {
+        await fetch(`${baseUrl}/api/extension/keyword`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keyword: selectedText })
+        });
+        await syncWithOEWatcher();
+        if (tab && tab.id) {
+          chrome.tabs.sendMessage(tab.id, { type: 'RESCAN' }).catch(() => {});
+        }
+      } catch (e) {
+        console.error('Failed to add keyword via context menu:', e);
+      }
+    } else if (info.menuItemId === 'oe-add-exclude-selection' && selectedText) {
+      try {
+        await fetch(`${baseUrl}/api/extension/exclude`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: selectedText })
+        });
+        await syncWithOEWatcher();
+        if (tab && tab.id) {
+          chrome.tabs.sendMessage(tab.id, { type: 'RESCAN' }).catch(() => {});
+        }
+      } catch (e) {
+        console.error('Failed to add exclude via context menu:', e);
+      }
+    } else if (info.menuItemId === 'oe-exclude-page') {
+      const pageUrl = (info.pageUrl || (tab && tab.url) || '').trim();
+      if (pageUrl) {
+        try {
+          const urlObj = new URL(pageUrl);
+          const domain = urlObj.hostname;
+          await fetch(`${baseUrl}/api/extension/exclude`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: domain })
+          });
+          await syncWithOEWatcher();
+          if (tab && tab.id) {
+            chrome.tabs.sendMessage(tab.id, { type: 'RESCAN' }).catch(() => {});
+          }
+        } catch (e) {
+          console.error('Failed to exclude page via context menu:', e);
+        }
+      }
+    }
+  });
+}
 
 // Periodic background sync (every 15 minutes)
 if (chrome.alarms) {
@@ -73,6 +187,7 @@ async function syncWithOEWatcher() {
     const rawPersons = data.persons || [];
     const aliases = data.aliases || {};
     const excludeList = data.exclude_list || [];
+    const keywords = data.keywords || [];
 
     const blacklist = [];
     for (const p of rawPersons) {
@@ -96,10 +211,11 @@ async function syncWithOEWatcher() {
       persons: blacklist,
       aliases: aliases,
       excludeList: excludeList,
+      keywords: keywords,
       apiConnected: true
     });
 
-    console.log(`[OE Watcher Extension] Senkronizasyon başarılı: ${blacklist.length} kişi yüklendi.`);
+    console.log(`[OE Watcher Extension] Senkronizasyon başarılı: ${blacklist.length} kişi, ${keywords.length} kelime yüklendi.`);
     return { success: true, count: blacklist.length };
   } catch (err) {
     console.warn('[OE Watcher Extension] Yerel API erişilemedi, dahili veritabanı kontrol ediliyor:', err.message);
@@ -118,6 +234,7 @@ async function syncWithOEWatcher() {
         persons: fallback.persons,
         aliases: fallback.aliases,
         excludeList: fallback.excludeList,
+        keywords: [],
         apiConnected: false
       });
       return { success: true, count: fallback.persons.length, fallback: true };
@@ -132,16 +249,18 @@ async function syncWithOEWatcher() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'GET_DATA') {
     (async () => {
-      let data = await chrome.storage.local.get(['settings', 'persons', 'aliases', 'excludeList', 'apiConnected']);
+      let data = await chrome.storage.local.get(['settings', 'persons', 'aliases', 'excludeList', 'keywords', 'apiConnected']);
       if (!data.persons || data.persons.length === 0) {
         const fallback = await loadBundledFallback();
         data.persons = fallback.persons;
         data.aliases = fallback.aliases;
         data.excludeList = fallback.excludeList;
+        data.keywords = [];
         await chrome.storage.local.set({
           persons: fallback.persons,
           aliases: fallback.aliases,
-          excludeList: fallback.excludeList
+          excludeList: fallback.excludeList,
+          keywords: []
         });
       }
       sendResponse(data);

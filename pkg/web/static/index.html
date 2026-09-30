@@ -194,6 +194,7 @@
                 <button class="rule-tab-btn active" data-tab="tabAddPerson">+ Kişi Ekle</button>
                 <button class="rule-tab-btn" data-tab="tabAlias">Alias (Mahlas)</button>
                 <button class="rule-tab-btn" data-tab="tabExclude">Exclude (Beyaz Liste)</button>
+                <button class="rule-tab-btn" data-tab="tabKeyword">Kelime / Tag Engelle</button>
               </div>
               <div class="rules-io-btns">
                 <button id="btnExportRules" class="btn-micro" title="Özel kuralları JSON olarak indir">⬇️ Yedekle</button>
@@ -247,7 +248,7 @@
 
           <!-- Tab 3: Exclude List (Whitelist) -->
           <div class="rule-tab-pane" id="tabExclude" style="display: none;">
-            <p class="rule-desc">Bu listedeki sanatçı, şarkı veya web URL / alan adları (örn: <code>https://github.com/bysinbin/oe-watcher</code>) eşleşse dahi ASLA uyarılmaz, atlanmaz ve Chrome eklentisinde engellenmez.</p>
+            <p class="rule-desc">Bu listedeki sanatçı, şarkı veya web URL / alan adları (örn: <code>https://github.com/bysinbin/oe-watcher</code>) eşleşse dahi ASLA uyarılmaz, atlanmaz ve eklentide engellenmez.</p>
             <form id="formAddExclude" class="rules-form">
               <div class="form-row">
                 <input type="text" id="excludeName" placeholder="Muaf Tutulacak Sanatçı / İsim veya URL (örn: https://github.com/bysinbin/oe-watcher)" required>
@@ -255,6 +256,18 @@
               </div>
             </form>
             <div class="custom-items-list" id="customExcludeList"></div>
+          </div>
+
+          <!-- Tab 4: Custom Keywords / Hashtags -->
+          <div class="rule-tab-pane" id="tabKeyword" style="display: none;">
+            <p class="rule-desc">Medyada, şarkı adında, video başlığında veya tarayıcı sayfalarında bu kelimeler/hashtagler geçtiğinde içerik uyarılır ve kalkanlanır.</p>
+            <form id="formAddKeyword" class="rules-form">
+              <div class="form-row">
+                <input type="text" id="keywordInput" placeholder="Engellenecek Kelime veya Hashtag (örn: #boykot, sponsorlu, vb.)" required>
+                <button type="submit" class="btn btn-danger">+ Kelimeyi Engelle</button>
+              </div>
+            </form>
+            <div class="custom-items-list" id="customKeywordsList"></div>
           </div>
         </div>
 
@@ -298,6 +311,28 @@
             <div class="hist-stat-item">
               <span class="hist-stat-label">Ertelenen</span>
               <span class="hist-stat-val text-purple" id="histStatSnoozed">0</span>
+            </div>
+          </div>
+
+          <!-- Visual Analytics & Charts -->
+          <div class="history-analytics-grid" id="historyAnalyticsGrid">
+            <div class="analytics-card">
+              <div class="analytics-title">
+                <span>Platform Dağılımı</span>
+                <span class="analytics-sub">Tespit Edilen Uygulamalar</span>
+              </div>
+              <div class="platform-bars" id="platformBarsContainer">
+                <div class="empty-mini-state">Henüz veri yok</div>
+              </div>
+            </div>
+            <div class="analytics-card">
+              <div class="analytics-title">
+                <span>En Çok Engellenenler</span>
+                <span class="analytics-sub">Top 5 Sanatçı / İsim</span>
+              </div>
+              <div class="top-blocked-bars" id="topBlockedBarsContainer">
+                <div class="empty-mini-state">Henüz veri yok</div>
+              </div>
             </div>
           </div>
 
@@ -478,6 +513,17 @@
                 <span>Harf ve yazım hatalarında Levenshtein benzerlik skoru ile yakalar.</span>
               </div>
             </div>
+
+            <div class="settings-switch-item">
+              <label class="switch">
+                <input type="checkbox" id="cfgEnableSkipToast">
+                <span class="slider"></span>
+              </label>
+              <div class="switch-meta">
+                <strong>Otomatik Geçiş Bildirimi (Skip Toast)</strong>
+                <span>Şarkı otomatik atlandığında mini masaüstü bildirimi gösterilir.</span>
+              </div>
+            </div>
           </div>
 
           <!-- Slider: Fuzzy Threshold -->
@@ -519,8 +565,39 @@
             </div>
           </div>
 
+          <!-- Webhook Integrations Section -->
+          <div class="settings-section-divider">
+            <span>WEBHOOK & CANLI BİLDİRİM ENTEGRASYONLARI //</span>
+          </div>
+
+          <div class="settings-webhook-box">
+            <div class="settings-field">
+              <label for="cfgDiscordWebhook">Discord Webhook URL:</label>
+              <div class="input-with-btn">
+                <input type="url" id="cfgDiscordWebhook" placeholder="https://discord.com/api/webhooks/...">
+                <button type="button" class="btn btn-sm btn-outline" id="btnTestDiscord">Discord Testi</button>
+              </div>
+              <span class="field-subtext">Tespit edilen içerikler Discord kanalınıza zengin embed kartı olarak iletilir.</span>
+            </div>
+
+            <div class="settings-row-pair" style="margin-top: 12px;">
+              <div class="settings-field">
+                <label for="cfgTelegramBotToken">Telegram Bot Token:</label>
+                <input type="text" id="cfgTelegramBotToken" placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ">
+              </div>
+              <div class="settings-field">
+                <label for="cfgTelegramChatID">Telegram Chat ID:</label>
+                <div class="input-with-btn">
+                  <input type="text" id="cfgTelegramChatID" placeholder="-100123456789 veya 12345678">
+                  <button type="button" class="btn btn-sm btn-outline" id="btnTestTelegram">Telegram Testi</button>
+                </div>
+              </div>
+            </div>
+            <span class="field-subtext">Telegram botunuz üzerinden grubunuza veya özel sohbetinize anında alarm gönderilir.</span>
+          </div>
+
           <!-- Password, Web Port & Auto-Sync -->
-          <div class="settings-row-pair">
+          <div class="settings-row-pair" style="margin-top: 14px;">
             <div class="settings-field">
               <label for="cfgWebPassword">Web Paneli Giriş Parolası:</label>
               <input type="text" id="cfgWebPassword" placeholder="Parola (örn: admin)">
