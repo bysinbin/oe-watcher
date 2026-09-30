@@ -1177,17 +1177,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (customExcludeList) {
       const excludes = rules.exclude_list || [];
       if (excludes.length === 0) {
-        customExcludeList.innerHTML = '<div class="empty-state" style="padding: 10px;">Beyaz listede kimse yok.</div>';
+        customExcludeList.innerHTML = '<div class="empty-state" style="padding: 10px;">Beyaz listede kimse veya URL yok.</div>';
       } else {
-        customExcludeList.innerHTML = excludes.map(name => `
+        customExcludeList.innerHTML = excludes.map(name => {
+          const isUrl = /^https?:\/\//i.test(name) || (name.includes('/') && name.includes('.')) || name.includes('.com') || name.includes('.org') || name.includes('.net');
+          const icon = isUrl ? '🌐' : '🛡️';
+          const metaBadge = isUrl 
+            ? '<span class="count-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.72rem; padding: 2px 7px;">URL / Web Muafiyeti</span>' 
+            : '<span class="custom-item-meta">(Muaf)</span>';
+          const displayLabel = isUrl 
+            ? `<a href="${escapeHTML(name.startsWith('http') ? name : 'https://' + name)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; word-break: break-all;">${escapeHTML(name)}</a>` 
+            : escapeHTML(name);
+          return `
           <div class="custom-item">
-            <div>
-              <span class="custom-item-name">🛡️ ${escapeHTML(name)}</span>
-              <span class="custom-item-meta">(Muaf)</span>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span class="custom-item-name">${icon} ${displayLabel}</span>
+              ${metaBadge}
             </div>
             <button class="btn-icon-del" onclick="deleteCustomExclude('${escapeHTML(name)}')" title="Sil">✕</button>
           </div>
-        `).join('');
+          `;
+        }).join('');
       }
     }
   }

@@ -214,6 +214,9 @@ func (m *Matcher) Match(track models.MediaInfo) *models.MatchResult {
 
 	// Whitelist / Exclude check
 	if m.rulesMgr != nil {
+		if track.URL != "" && m.rulesMgr.IsExcluded(track.URL) {
+			return nil
+		}
 		if m.rulesMgr.IsExcluded(track.Artist) || m.rulesMgr.IsExcluded(track.Title) {
 			return nil
 		}

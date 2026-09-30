@@ -213,6 +213,30 @@ func TestMatcherExcludeList(t *testing.T) {
 	}
 }
 
+func TestMatcherURLExclude(t *testing.T) {
+	tempDir := t.TempDir()
+	rm := rules.NewManager(tempDir)
+
+	// Exclude a specific URL / repo
+	_ = rm.AddExclude("https://github.com/bysinbin/oe-watcher")
+
+	m := matcher.NewMatcher(samplePersons())
+	m.SetRulesManager(rm)
+
+	// A track matching a watched person (Cem Adrian) but played from the excluded URL
+	track := models.MediaInfo{
+		App:    "Chrome",
+		Artist: "Cem Adrian",
+		Title:  "Kül",
+		URL:    "https://github.com/bysinbin/oe-watcher/blob/main/README.md",
+	}
+
+	result := m.Match(track)
+	if result != nil {
+		t.Fatalf("Expected nil for track played from excluded URL, got match: %v", result)
+	}
+}
+
 func TestMatcherFuzzyMatch(t *testing.T) {
 	m := matcher.NewMatcher(samplePersons())
 	m.SetFuzzy(true, 0.85)

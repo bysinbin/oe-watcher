@@ -95,6 +95,68 @@
     return Array.from(list);
   }
 
+  // URL normalization and whitelist checking
+  function normalizeUrlForMatching(u) {
+    if (!u) return '';
+    let str = u.trim().toLowerCase();
+    str = str.replace(/^https?:\/\//i, '');
+    str = str.replace(/^www\./i, '');
+    str = str.replace(/\/+$/, '');
+    return str;
+  }
+
+  function isUrlExcluded(targetUrl, excludeEntry) {
+    if (!targetUrl || !excludeEntry) return false;
+    const normTarget = normalizeUrlForMatching(targetUrl);
+    const normEx = normalizeUrlForMatching(excludeEntry);
+    if (!normEx) return false;
+
+    // Check if exclude entry is a URL or domain pattern
+    const isUrlPattern = excludeEntry.includes('/') || excludeEntry.includes('.') || /^https?:\/\//i.test(excludeEntry);
+    if (!isUrlPattern) return false;
+
+    // Exact match
+    if (normTarget === normEx) return true;
+
+    // Subpath match (e.g. repo URL whitelists all issues, trees, PRs under it)
+    if (normTarget.startsWith(normEx + '/') || normTarget.startsWith(normEx + '?') || normTarget.startsWith(normEx + '#')) {
+      return true;
+    }
+
+    // Domain / subdomain match (e.g. 'github.com' whitelists all pages on github.com)
+    try {
+      const targetHost = (normTarget.split('/')[0]).split('?')[0].split('#')[0];
+      const exHost = (normEx.split('/')[0]).split('?')[0].split('#')[0];
+      if (!normEx.includes('/') && (targetHost === exHost || targetHost.endsWith('.' + exHost))) {
+        return true;
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  function isCurrentPageExcluded() {
+    if (!config.excludeList || config.excludeList.length === 0) return false;
+    const currentUrl = window.location.href;
+    for (const entry of config.excludeList) {
+      if (isUrlExcluded(currentUrl, entry)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function cleanAllShields() {
+    document.querySelectorAll('.oe-shield-banner, .oe-revert-tag').forEach(el => el.remove());
+    document.querySelectorAll('.oe-shielded-container, [data-oe-shielded]').forEach(el => {
+      el.classList.remove('oe-shielded-container');
+      el.removeAttribute('data-oe-shielded');
+      el.removeAttribute('data-oe-revealed');
+      el.style.minHeight = '';
+    });
+    shieldedCount = 0;
+  }
+
   // Load config & data from background service worker
   function init() {
     chrome.runtime.sendMessage({ type: 'GET_DATA' }, (response) => {
@@ -104,7 +166,20 @@
       config.aliases = response.aliases || {};
       config.excludeList = response.excludeList || [];
 
-      if (!config.enabled || config.persons.length === 0) {
+      if (!config.enabled) {
+        cleanAllShields();
+        chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: 0 });
+        return;
+      }
+
+      if (isCurrentPageExcluded()) {
+        cleanAllShields();
+        chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: 0, isExcluded: true });
+        startObserver();
+        return;
+      }
+
+      if (config.persons.length === 0) {
         return;
       }
 
@@ -313,7 +388,15 @@
 
   // Scan text nodes & key element attributes across document
   function scanDocument(rootNode = document.body) {
-    if (!config.enabled || compiledMatchers.length === 0 || !rootNode) return;
+    if (!config.enabled || !rootNode) return;
+
+    if (isCurrentPageExcluded()) {
+      cleanAllShields();
+      chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: 0, isExcluded: true });
+      return;
+    }
+
+    if (compiledMatchers.length === 0) return;
 
     const containersToShield = new Map();
 
@@ -420,16 +503,20 @@
       subtree: true
     });
 
-    // YouTube & SPA navigation events
-    window.addEventListener('yt-navigate-finish', () => {
-      setTimeout(triggerScan, 200);
-    });
-    window.addEventListener('yt-page-data-updated', () => {
-      setTimeout(triggerScan, 200);
-    });
+    const handleUrlChange = () => {
+      if (isCurrentPageExcluded()) {
+        cleanAllShields();
+        chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: 0, isExcluded: true });
+      } else {
+        triggerScan();
+      }
+    };
 
-    window.addEventListener('popstate', triggerScan);
-    window.addEventListener('hashchange', triggerScan);
+    // YouTube & SPA navigation events
+    window.addEventListener('yt-navigate-finish', () => setTimeout(handleUrlChange, 200));
+    window.addEventListener('yt-page-data-updated', () => setTimeout(handleUrlChange, 200));
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
   }
 
   function escapeHTML(str) {
@@ -448,13 +535,7 @@
     if (area === 'local' && changes.settings) {
       config.enabled = changes.settings.newValue ? changes.settings.newValue.enabled !== false : true;
       if (!config.enabled) {
-        document.querySelectorAll('.oe-shield-banner, .oe-revert-tag').forEach(el => el.remove());
-        document.querySelectorAll('.oe-shielded-container').forEach(el => {
-          el.classList.remove('oe-shielded-container');
-          el.removeAttribute('data-oe-shielded');
-          el.style.minHeight = '';
-        });
-        shieldedCount = 0;
+        cleanAllShields();
         chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: 0 });
       } else {
         scanDocument();
@@ -468,12 +549,23 @@
   // Message handler for live stats & manual rescan from popup
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'GET_PAGE_STATS') {
-      sendResponse({ shieldedCount: shieldedCount });
+      const excluded = isCurrentPageExcluded();
+      sendResponse({ 
+        shieldedCount: excluded ? 0 : shieldedCount,
+        isExcluded: excluded,
+        pageUrl: window.location.href
+      });
       return false;
     }
     if (msg.type === 'RESCAN') {
       scanDocument();
-      sendResponse({ ok: true, shieldedCount: shieldedCount });
+      const excluded = isCurrentPageExcluded();
+      sendResponse({ 
+        ok: true, 
+        shieldedCount: excluded ? 0 : shieldedCount,
+        isExcluded: excluded,
+        pageUrl: window.location.href
+      });
       return false;
     }
   });

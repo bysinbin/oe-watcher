@@ -215,11 +215,33 @@ func (m *Manager) RemoveAlias(alias string) bool {
 	return false
 }
 
-// AddExclude adds an artist or song name to the whitelist.
+// NormalizeURL normalizes a URL string for matching by stripping scheme (http/https), www., and trailing slashes.
+func NormalizeURL(raw string) string {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	raw = strings.TrimPrefix(raw, "https://")
+	raw = strings.TrimPrefix(raw, "http://")
+	raw = strings.TrimPrefix(raw, "www.")
+	raw = strings.TrimRight(raw, "/")
+	return raw
+}
+
+// IsURLPattern checks whether the string resembles a URL or web domain.
+func IsURLPattern(s string) bool {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+		return true
+	}
+	if strings.Contains(s, "/") && strings.Contains(s, ".") {
+		return true
+	}
+	return false
+}
+
+// AddExclude adds an artist, song name, or URL/domain to the whitelist.
 func (m *Manager) AddExclude(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("isim boş olamaz")
+		return fmt.Errorf("değer boş olamaz")
 	}
 
 	m.mu.Lock()
@@ -250,7 +272,7 @@ func (m *Manager) RemoveExclude(name string) bool {
 	return false
 }
 
-// IsExcluded checks whether a given name or artist is in the exclude list.
+// IsExcluded checks whether a given name, artist, song title, or URL is in the exclude list.
 func (m *Manager) IsExcluded(name string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -260,10 +282,41 @@ func (m *Manager) IsExcluded(name string) bool {
 		return false
 	}
 
+	normName := NormalizeURL(clean)
+
 	for _, ex := range m.ExcludeList {
 		exClean := strings.ToLower(strings.TrimSpace(ex))
+		if exClean == "" {
+			continue
+		}
+
+		// Exact match or substring for regular text
 		if clean == exClean || strings.Contains(clean, exClean) {
 			return true
+		}
+
+		// URL and domain matching
+		if IsURLPattern(exClean) || IsURLPattern(clean) {
+			normEx := NormalizeURL(exClean)
+			if normEx != "" {
+				if normName == normEx {
+					return true
+				}
+				// Subpath match (e.g. repo URL whitelists all files and issues under it)
+				if strings.HasPrefix(normName, normEx+"/") || strings.HasPrefix(normName, normEx+"?") || strings.HasPrefix(normName, normEx+"#") {
+					return true
+				}
+				// Domain or subdomain match (e.g. github.com whitelists everything on github.com)
+				if !strings.Contains(normEx, "/") {
+					host := normName
+					if idx := strings.Index(host, "/"); idx != -1 {
+						host = host[:idx]
+					}
+					if host == normEx || strings.HasSuffix(host, "."+normEx) {
+						return true
+					}
+				}
+			}
 		}
 	}
 	return false

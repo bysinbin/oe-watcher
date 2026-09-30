@@ -156,13 +156,74 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'ADD_EXCLUDE') {
+    (async () => {
+      const url = (msg.url || '').trim();
+      if (!url) {
+        sendResponse({ success: false, error: 'URL boş olamaz' });
+        return;
+      }
+
+      const data = await chrome.storage.local.get(['excludeList', 'settings']);
+      const list = data.excludeList || [];
+      if (!list.includes(url)) {
+        list.push(url);
+        await chrome.storage.local.set({ excludeList: list });
+      }
+
+      const baseUrl = (data.settings && data.settings.apiUrl) || 'http://127.0.0.1:8080';
+      try {
+        await fetch(`${baseUrl}/api/extension/exclude`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: url })
+        });
+      } catch (_) {}
+
+      sendResponse({ success: true, list });
+    })();
+    return true;
+  }
+
+  if (msg.type === 'REMOVE_EXCLUDE') {
+    (async () => {
+      const url = (msg.url || '').trim();
+      if (!url) {
+        sendResponse({ success: false, error: 'URL boş olamaz' });
+        return;
+      }
+
+      const data = await chrome.storage.local.get(['excludeList', 'settings']);
+      let list = data.excludeList || [];
+      list = list.filter(item => item !== url);
+      await chrome.storage.local.set({ excludeList: list });
+
+      const baseUrl = (data.settings && data.settings.apiUrl) || 'http://127.0.0.1:8080';
+      try {
+        await fetch(`${baseUrl}/api/extension/exclude`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: url })
+        });
+      } catch (_) {}
+
+      sendResponse({ success: true, list });
+    })();
+    return true;
+  }
+
   if (msg.type === 'UPDATE_BADGE' && sender.tab && sender.tab.id) {
-    const count = msg.count || 0;
-    if (count > 0) {
-      chrome.action.setBadgeText({ tabId: sender.tab.id, text: String(count) });
-      chrome.action.setBadgeBackgroundColor({ tabId: sender.tab.id, color: '#e11d48' });
+    if (msg.isExcluded) {
+      chrome.action.setBadgeText({ tabId: sender.tab.id, text: 'MUAF' });
+      chrome.action.setBadgeBackgroundColor({ tabId: sender.tab.id, color: '#10b981' });
     } else {
-      chrome.action.setBadgeText({ tabId: sender.tab.id, text: '' });
+      const count = msg.count || 0;
+      if (count > 0) {
+        chrome.action.setBadgeText({ tabId: sender.tab.id, text: String(count) });
+        chrome.action.setBadgeBackgroundColor({ tabId: sender.tab.id, color: '#e11d48' });
+      } else {
+        chrome.action.setBadgeText({ tabId: sender.tab.id, text: '' });
+      }
     }
     sendResponse({ ok: true });
     return false;

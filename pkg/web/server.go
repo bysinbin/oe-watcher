@@ -113,6 +113,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/logout", s.handleLogout)
 	mux.HandleFunc("/api/extension/sync", s.handleExtensionSync)
+	mux.HandleFunc("/api/extension/exclude", s.handleRuleExclude)
 
 	// Protected API endpoints
 	mux.HandleFunc("/api/events", s.authMiddleware(s.handleEvents))
@@ -682,6 +683,14 @@ type ExcludeReq struct {
 }
 
 func (s *Server) handleRuleExclude(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method == http.MethodPost {
 		var req ExcludeReq

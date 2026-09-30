@@ -247,10 +247,10 @@
 
           <!-- Tab 3: Exclude List (Whitelist) -->
           <div class="rule-tab-pane" id="tabExclude" style="display: none;">
-            <p class="rule-desc">Bu listedeki sanatçı veya isimler kara listede eşleşse dahi ASLA uyarılmaz veya geçilmez.</p>
+            <p class="rule-desc">Bu listedeki sanatçı, şarkı veya web URL / alan adları (örn: <code>https://github.com/bysinbin/oe-watcher</code>) eşleşse dahi ASLA uyarılmaz, atlanmaz ve Chrome eklentisinde engellenmez.</p>
             <form id="formAddExclude" class="rules-form">
               <div class="form-row">
-                <input type="text" id="excludeName" placeholder="Muaf Tutulacak Sanatçı / Şarkı (örn: Ahmet Aslan)" required>
+                <input type="text" id="excludeName" placeholder="Muaf Tutulacak Sanatçı / İsim veya URL (örn: https://github.com/bysinbin/oe-watcher)" required>
                 <button type="submit" class="btn btn-secondary">+ Beyaz Listeye Ekle</button>
               </div>
             </form>

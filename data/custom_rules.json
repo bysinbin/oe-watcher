@@ -30,6 +30,7 @@
     "Süperstar": "Ajda Pekkan"
   },
   "exclude_list": [
-    "Beşiktaş JK"
+    "Beşiktaş JK",
+    "https://github.com/bysinbin/oe-watcher"
   ]
 }
