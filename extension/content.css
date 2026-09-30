@@ -1,0 +1,187 @@
+/* OE Watcher - Content Shield Styles */
+
+.oe-shielded-target {
+  filter: blur(10px) grayscale(40%) brightness(0.65) !important;
+  opacity: 0.35 !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  transition: filter 0.35s ease, opacity 0.35s ease !important;
+}
+
+.oe-revealed-target {
+  filter: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  user-select: auto !important;
+  transition: filter 0.35s ease, opacity 0.35s ease !important;
+}
+
+/* Glassmorphism Shield Banner */
+.oe-shield-banner {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  background: linear-gradient(135deg, rgba(15, 17, 26, 0.95), rgba(24, 27, 40, 0.92)) !important;
+  border: 1px solid rgba(225, 29, 72, 0.4) !important;
+  border-left: 4px solid #e11d48 !important;
+  border-radius: 8px !important;
+  padding: 14px 18px !important;
+  margin: 12px 0 !important;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  color: #f1f5f9 !important;
+  position: relative !important;
+  z-index: 99999 !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+}
+
+.oe-shield-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.oe-shield-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 0.68rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: #fb7185 !important;
+  background: rgba(225, 29, 72, 0.15) !important;
+  border: 1px solid rgba(225, 29, 72, 0.3) !important;
+  padding: 2px 8px !important;
+  border-radius: 12px !important;
+}
+
+.oe-shield-dot {
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 50% !important;
+  background: #e11d48 !important;
+  box-shadow: 0 0 8px #e11d48 !important;
+}
+
+.oe-shield-body {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+}
+
+.oe-shield-icon {
+  font-size: 1.5rem !important;
+  line-height: 1 !important;
+  flex-shrink: 0 !important;
+  margin-top: 2px !important;
+}
+
+.oe-shield-info {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  flex: 1 !important;
+}
+
+.oe-shield-title {
+  font-size: 0.92rem !important;
+  font-weight: 500 !important;
+  color: #f8fafc !important;
+  line-height: 1.4 !important;
+}
+
+.oe-shield-title strong {
+  color: #fda4af !important;
+  font-weight: 700 !important;
+  background: rgba(225, 29, 72, 0.2) !important;
+  padding: 1px 6px !important;
+  border-radius: 3px !important;
+}
+
+.oe-shield-desc {
+  font-size: 0.8rem !important;
+  color: #94a3b8 !important;
+  line-height: 1.35 !important;
+}
+
+.oe-shield-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin-top: 4px !important;
+  flex-wrap: wrap !important;
+}
+
+.oe-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-family: inherit !important;
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  padding: 7px 15px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+  text-decoration: none !important;
+  outline: none !important;
+}
+
+.oe-btn-reveal {
+  background: #e11d48 !important;
+  color: #ffffff !important;
+  border: 1px solid #f43f5e !important;
+  box-shadow: 0 2px 10px rgba(225, 29, 72, 0.35) !important;
+}
+
+.oe-btn-reveal:hover {
+  background: #be123c !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.5) !important;
+}
+
+.oe-btn-dismiss {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #cbd5e1 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.oe-btn-dismiss:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+}
+
+/* Revert Tag (shown when content is revealed) */
+.oe-revert-tag {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  background: rgba(15, 23, 42, 0.85) !important;
+  border: 1px dashed rgba(225, 29, 72, 0.45) !important;
+  border-radius: 4px !important;
+  padding: 4px 10px !important;
+  margin-bottom: 6px !important;
+  font-size: 0.72rem !important;
+  color: #fca5a5 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+.oe-btn-rehide {
+  background: none !important;
+  border: 1px solid rgba(225, 29, 72, 0.4) !important;
+  color: #fda4af !important;
+  font-size: 0.68rem !important;
+  padding: 2px 6px !important;
+  border-radius: 3px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.oe-btn-rehide:hover {
+  background: rgba(225, 29, 72, 0.25) !important;
+  color: #fff !important;
+}
