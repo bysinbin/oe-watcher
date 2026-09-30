@@ -139,14 +139,36 @@ Kaldırmak için:
 
 ---
 
-## 🌐 Google Chrome Eklentisi (Chrome Extension)
+## 🌐 Tarayıcı Eklentileri (Chrome & Firefox Extensions)
 
-Proje içerisinde yer alan `extension/` klasörü, tarayıcıda gezinirken (Twitter/X, Instagram, YouTube, web siteleri) metinlerde veya videolarda kara listedeki isimler geçtiğinde içeriği filtrelemenizi ve Web Paneli ile konuşmanızı sağlar:
+Proje içerisinde yer alan tarayıcı eklentileri, web'de gezinirken (Twitter/X, Instagram, YouTube, haber portalları) kara listedeki isimler geçtiğinde içeriği otomatik olarak flu (blur) yapar ve görmeden önce onayınızı sorar.
 
+Eklentiler yerel OE Watcher servisi (`http://127.0.0.1:8080`) ile canlı senkronize çalışır.
+
+### 🦊 Mozilla Firefox Kurulumu:
+1. Firefox'ta adres çubuğuna `about:debugging#/runtime/this-firefox` yazın.
+2. **"Geçici Eklenti Yükle..."** (Load Temporary Add-on...) butonuna tıklayın.
+3. Projedeki **`extension-firefox/manifest.json`** dosyasını seçin.
+4. Eklenti anında araç çubuğunuza eklenir ve koruma başlar.
+
+*(Alternatif olarak `./build_extensions.sh` ile oluşturulan `dist/oe-watcher-firefox.xpi` dosyasını da doğrudan Firefox'a sürükleyip bırakabilirsiniz).*
+
+---
+
+### 🌐 Google Chrome / Edge / Brave / Opera Kurulumu:
 1. Chrome'da `chrome://extensions` adresine gidin.
 2. Sağ üstteki **"Geliştirici Modu"**nu (Developer mode) açın.
-3. **"Paketlenmemiş Öğe Yükle"** (Load unpacked) butonuna tıklayıp projedeki `extension` klasörünü seçin.
-4. Eklenti, yerel OE Watcher servisi (`http://127.0.0.1:8080`) ile otomatik olarak senkronize çalışacaktır.
+3. **"Paketlenmemiş Öğe Yükle"** (Load unpacked) butonuna tıklayıp projedeki **`extension`** klasörünü seçin.
+
+---
+
+### 📦 Eklentileri Paketleme (Web Store / AMO):
+```bash
+./build_extensions.sh
+```
+> Çıktılar:
+> - `dist/oe-watcher-chrome.zip` (Chrome Web Store için)
+> - `dist/oe-watcher-firefox.xpi` ve `dist/oe-watcher-firefox.zip` (Firefox AMO için)
 
 ---
 
@@ -155,23 +177,25 @@ Proje içerisinde yer alan `extension/` klasörü, tarayıcıda gezinirken (Twit
 ```
 medya-filter/
 ├── main.go                     # Giriş noktası, bayraklar ve çoklu platform servis yöneticisi
-├── build_all.sh                # macOS, Windows ve Linux çoklu derleme betiği
+├── build_all.sh                # macOS, Windows, Linux ve Eklenti tam derleme betiği
 ├── build_app.sh                # Bağımsız macOS .app paketi derleme ve kod imzalama
 ├── build_windows.bat           # Windows yerel derleme betiği
 ├── build_linux.sh              # Linux yerel derleme betiği
+├── build_extensions.sh         # Chrome ve Firefox eklentilerini paketleme betiği
 ├── config.json                 # Yapılandırma dosyası (API, Port, Parola vb.)
-├── extension/                  # Google Chrome içerik filtreleme uzantısı
+├── extension/                  # Google Chrome / Chromium tabanlı tarayıcı eklentisi
+├── extension-firefox/          # Mozilla Firefox (Gecko MV3) eklentisi
 ├── data/
 │   ├── persons.json            # API'den senkronize edilen kişi önbelleği
 │   ├── custom_rules.json       # Elle eklenen kişiler, aliaslar ve beyaz liste
 │   └── session.json            # API oturum belirteci
 ├── pkg/
 │   ├── config/                 # Platformlar arası config ve veri yolu yöneticisi
-│   ├── tray/                   # macOS Cocoa Menü Çubuğu ve konsol döngüsü
+│   ├── tray/                   # macOS Cocoa Menü Çubuğu ve evrensel döngü
 │   ├── models/                 # Veri modelleri (MediaInfo, MatchResult vb.)
 │   ├── api/                    # OE List API istemcisi
 │   ├── matcher/                # Eşleştirme motoru (Exact, Fuzzy, Katkıda Bulunanlar)
-│   ├── media/                  # macOS (JXA/MediaRemote), Windows (GSMTC/Win32), Linux (MPRIS2) izleyicileri
+│   ├── media/                  # macOS (JXA/MediaRemote), Windows (GSMTC/Win32), Linux (MPRIS2)
 │   ├── notifier/               # macOS, Windows ve Linux yerel bildirim ve onay pencereleri
 │   ├── permission/             # macOS Accessibility TCC ve evrensel izin yöneticisi
 │   ├── history/                # Tespit ve şarkı geçiş geçmişi yöneticisi

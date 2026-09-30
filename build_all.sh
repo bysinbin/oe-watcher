@@ -32,9 +32,14 @@ CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o dist/oe-wat
 echo "✅ Windows AMD64: dist/oe-watcher-windows-amd64.exe"
 echo "✅ Windows ARM64: dist/oe-watcher-windows-arm64.exe"
 
+# 4. Package Browser Extensions (Chrome & Firefox)
+echo ""
+echo "🌐 [4/4] Tarayıcı eklentileri (Chrome & Firefox) paketleniyor..."
+./build_extensions.sh
+
 echo ""
 echo "===================================================================="
-echo "🎉 TÜM PLATFORMLAR İÇİN DERLEME TAMAMLANDI!"
+echo "🎉 TÜM PLATFORMLAR VE EKLENTİLER İÇİN DERLEME TAMAMLANDI!"
 echo "📁 Çıktı Klasörü: dist/"
 echo "===================================================================="
 ls -lh dist/

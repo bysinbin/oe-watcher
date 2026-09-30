@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OE Watcher Kalkanı</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">🛡️</div>
+        <div class="brand-info">
+          <h1>OE WATCHER</h1>
+          <span class="sub-brand">AKILLI İÇERİK KALKANI</span>
+        </div>
+      </div>
+      <div class="status-indicator" id="statusBadge">
+        <span class="dot"></span>
+        <span id="statusText">Bağlanıyor...</span>
+      </div>
+    </header>
+
+    <!-- Main Switch -->
+    <div class="toggle-card">
+      <div class="toggle-label">
+        <strong>İçerik Filtreleme</strong>
+        <span>Web sayfalarındaki kara liste içeriklerini buzla</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleEnabled" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">Bu Sayfada</span>
+        <span class="stat-val text-red" id="statTabCount">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Toplam Kara Liste</span>
+        <span class="stat-val text-blue" id="statTotalPersons">573</span>
+      </div>
+    </div>
+
+    <!-- URL Exclude / Whitelist Status & Action Card -->
+    <div class="whitelist-card" id="whitelistCard">
+      <div class="whitelist-info">
+        <span class="whitelist-status-icon" id="whitelistIcon">🌐</span>
+        <div class="whitelist-text-group">
+          <strong id="whitelistTitle">Sayfa Filtresi: Aktif</strong>
+          <span class="whitelist-desc" id="whitelistDesc">Kara listedeki isimler filtreleniyor</span>
+        </div>
+      </div>
+      <button type="button" class="btn-whitelist" id="btnToggleExcludeUrl">
+        🛡️ Bu URL'yi Muaf Tut
+      </button>
+    </div>
+
+    <!-- Quick Action Buttons -->
+    <div class="actions">
+      <button type="button" class="btn btn-secondary" id="btnSync">
+        <span class="btn-icon">🔄</span>
+        Listeyi Senkronize Et
+      </button>
+      <button type="button" class="btn btn-primary" id="btnOpenDashboard">
+        <span class="btn-icon">🌐</span>
+        Kontrol Panelini Aç
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span id="lastSyncText">Son senkronizasyon: -</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
