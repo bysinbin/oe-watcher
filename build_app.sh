@@ -49,11 +49,13 @@ cat << 'EOF' > "${CONTENTS_DIR}/Info.plist"
     <true/>
     <key>NSAppleEventsUsageDescription</key>
     <string>OE Watcher çalan müzikleri tespit etmek ve şarkı geçişlerini kontrol etmek için bu izne ihtiyaç duyar.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>OE Watcher müzik çaları kontrol etmek ve şarkı geçişi yapabilmek için erişilebilirlik iznine ihtiyaç duyar.</string>
 </dict>
 </plist>
 EOF
 
-echo "🎨 [4/5] macOS Uygulama İkonu (AppIcon.icns) üretiliyor..."
+echo "🎨 [4/6] macOS Uygulama İkonu (AppIcon.icns) üretiliyor..."
 ICONSET_DIR="/tmp/OEWatcher.iconset"
 rm -rf "${ICONSET_DIR}"
 mkdir -p "${ICONSET_DIR}"
@@ -119,15 +121,22 @@ cp /tmp/oe_icon_1024.png "${ICONSET_DIR}/icon_512x512@2x.png"
 iconutil -c icns "${ICONSET_DIR}" -o "${RESOURCES_DIR}/AppIcon.icns"
 rm -rf "${ICONSET_DIR}" /tmp/oe_icon_1024.png
 
-echo "📦 [5/5] Yapılandırma ve veri dosyaları kopyalanıyor..."
+echo "📦 [5/6] Yapılandırma ve veri dosyaları kopyalanıyor..."
 cp config.json "${RESOURCES_DIR}/" || true
 cp -r data "${RESOURCES_DIR}/" || true
 cp config.json "dist/" || true
 cp -r data "dist/" || true
 
+echo "🔏 [6/6] macOS Uygulama Paketi Kod İmzası (Ad-hoc Codesign) uygulanıyor..."
+# Finder ve sistem kalıntı özniteliklerini temizle (FinderInfo detritus hatasını engeller)
+xattr -cr "${BUNDLE_DIR}"
+# Bundle ID ile ad-hoc kod imzası uygula (Erişilebilirlik izninin kalıcı olmasını sağlar)
+codesign --force --deep --sign - --identifier "com.bysinbin.oe-watcher" "${BUNDLE_DIR}"
+codesign -vvv --deep --strict "${BUNDLE_DIR}"
+
 echo ""
 echo "===================================================================="
-echo "🎉 BAŞARILI: Bağımsız macOS Paketi Hazırlandı!"
+echo "🎉 BAŞARILI: Bağımsız macOS Paketi Hazırlandı ve İmzalandı!"
 echo "📁 Paket Konumu: dist/OE Watcher.app"
 echo "===================================================================="
 echo "💡 İpucu: 'dist/OE Watcher.app' dosyasını doğrudan /Applications klasörüne"

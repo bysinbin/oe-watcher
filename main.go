@@ -227,12 +227,14 @@ func handleInstallService() {
 		fmt.Printf("❌ Program dosya yolu bulunamadı: %v\n", err)
 		return
 	}
-	workDir := filepath.Dir(exePath)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Printf("❌ Kullanıcı ev dizini bulunamadı: %v\n", err)
 		return
 	}
+
+	appSupportDir := filepath.Join(homeDir, "Library", "Application Support", "OEWatcher")
+	_ = os.MkdirAll(appSupportDir, 0755)
 
 	launchDir := filepath.Join(homeDir, "Library", "LaunchAgents")
 	_ = os.MkdirAll(launchDir, 0755)
@@ -259,7 +261,7 @@ func handleInstallService() {
     <key>StandardErrorPath</key>
     <string>%s/oe-watcher.err</string>
 </dict>
-</plist>`, exePath, workDir, workDir, workDir)
+</plist>`, exePath, appSupportDir, appSupportDir, appSupportDir)
 
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
 		fmt.Printf("❌ Plist dosyası oluşturulamadı: %v\n", err)

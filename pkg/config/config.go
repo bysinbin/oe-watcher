@@ -43,8 +43,9 @@ func DefaultConfig() *Config {
 	}
 }
 
-// LocateConfigAndData reliably discovers the appropriate config.json path and data directory,
-// even when launched from macOS Finder / Cocoa .app bundle where working directory is "/".
+// LocateConfigAndData reliably discovers the appropriate config.json path and data directory.
+// For macOS Cocoa .app bundles, user data and config are isolated in ~/Library/Application Support/OEWatcher
+// so that macOS never prompts for Desktop/Documents folder permissions.
 func LocateConfigAndData(customPath string) (string, string) {
 	if customPath != "" {
 		abs, err := filepath.Abs(customPath)
@@ -54,9 +55,66 @@ func LocateConfigAndData(customPath string) (string, string) {
 		return customPath, filepath.Join(filepath.Dir(customPath), "data")
 	}
 
-	candidates := []string{}
+	exe, _ := os.Executable()
+	home, _ := os.UserHomeDir()
 
-	// 1. Current working directory (if not root "/")
+	// If running inside a macOS .app bundle, user data MUST be isolated in Application Support.
+	// This ensures macOS never prompts for Desktop/Documents folder access, and settings persist
+	// even when the .app is moved to /Applications.
+	if exe != "" && strings.Contains(exe, ".app/Contents/MacOS") {
+		if home != "" {
+			appSupportDir := filepath.Join(home, "Library", "Application Support", "OEWatcher")
+			targetConfig := filepath.Join(appSupportDir, ConfigFileName)
+			targetDataDir := filepath.Join(appSupportDir, "data")
+			_ = os.MkdirAll(targetDataDir, 0755)
+
+			exeDir := filepath.Dir(exe)
+			bundleDir := filepath.Dir(filepath.Dir(exeDir))
+			resourcesDir := filepath.Join(bundleDir, "Contents", "Resources")
+
+			// Seed config.json if it doesn't exist in Application Support
+			if _, err := os.Stat(targetConfig); os.IsNotExist(err) {
+				seedConfigCandidates := []string{
+					filepath.Join(resourcesDir, ConfigFileName),
+					filepath.Join(filepath.Dir(bundleDir), ConfigFileName),
+					filepath.Join(filepath.Dir(filepath.Dir(bundleDir)), ConfigFileName),
+				}
+				for _, sc := range seedConfigCandidates {
+					if data, err := os.ReadFile(sc); err == nil {
+						_ = os.WriteFile(targetConfig, data, 0644)
+						break
+					}
+				}
+			}
+
+			// Seed data files (custom_rules.json, persons.json, etc.) if not existing in Application Support
+			seedDataDirs := []string{
+				filepath.Join(resourcesDir, "data"),
+				filepath.Join(filepath.Dir(bundleDir), "data"),
+				filepath.Join(filepath.Dir(filepath.Dir(bundleDir)), "data"),
+			}
+			for _, sdd := range seedDataDirs {
+				if entries, err := os.ReadDir(sdd); err == nil {
+					for _, entry := range entries {
+						if !entry.IsDir() {
+							destFile := filepath.Join(targetDataDir, entry.Name())
+							if _, err := os.Stat(destFile); os.IsNotExist(err) {
+								if content, err := os.ReadFile(filepath.Join(sdd, entry.Name())); err == nil {
+									_ = os.WriteFile(destFile, content, 0644)
+								}
+							}
+						}
+					}
+					break
+				}
+			}
+
+			return targetConfig, targetDataDir
+		}
+	}
+
+	// CLI / development mode: check current working directory first
+	candidates := []string{}
 	cwd, err := os.Getwd()
 	if err == nil && cwd != "" && cwd != "/" {
 		candidates = append(candidates,
@@ -65,29 +123,16 @@ func LocateConfigAndData(customPath string) (string, string) {
 		)
 	}
 
-	// 2. Binary location / macOS App Bundle location
-	exe, err := os.Executable()
-	if err == nil && exe != "" {
+	// Binary location
+	if exe != "" {
 		exeDir := filepath.Dir(exe)
-		if strings.Contains(exe, ".app/Contents/MacOS") {
-			bundleDir := filepath.Dir(filepath.Dir(exeDir)) // e.g. .../OE Watcher.app
-			parentDir := filepath.Dir(bundleDir)            // e.g. .../dist
-			grandParent := filepath.Dir(parentDir)         // e.g. .../medya-filter (workspace root)
-			candidates = append(candidates,
-				filepath.Join(grandParent, ConfigFileName),
-				filepath.Join(parentDir, ConfigFileName),
-				filepath.Join(bundleDir, "Contents", "Resources", ConfigFileName),
-			)
-		} else {
-			candidates = append(candidates,
-				filepath.Join(exeDir, ConfigFileName),
-				filepath.Join(exeDir, "data", ConfigFileName),
-			)
-		}
+		candidates = append(candidates,
+			filepath.Join(exeDir, ConfigFileName),
+			filepath.Join(exeDir, "data", ConfigFileName),
+		)
 	}
 
-	// 3. User standard Application Support directory
-	home, _ := os.UserHomeDir()
+	// User Application Support fallback
 	if home != "" {
 		appSupportDir := filepath.Join(home, "Library", "Application Support", "OEWatcher")
 		candidates = append(candidates, filepath.Join(appSupportDir, ConfigFileName))

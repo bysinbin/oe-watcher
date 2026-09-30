@@ -61,8 +61,8 @@ func CheckAndPrompt() bool {
 	// Display desktop notification
 	notifier.ShowNotification(
 		"Erişilebilirlik İzni Gerekli",
-		"medya-filter",
-		"Lütfen açılan Sistem Ayarları penceresinden izni etkinleştirin.",
+		"OE Watcher",
+		"Müzik çalar kontrolleri için lütfen Sistem Ayarları'ndan OE Watcher erişilebilirlik iznini açın.",
 	)
 
 	return false

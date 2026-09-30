@@ -32,6 +32,7 @@
   "exclude_list": [
     "Beşiktaş JK",
     "https://github.com/bysinbin/oe-watcher",
-    "http://localhost:8080/"
+    "http://localhost:8080/",
+    "http://localhost:8080"
   ]
 }
