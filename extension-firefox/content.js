@@ -308,6 +308,82 @@
     } catch (_) {}
   }
 
+  // Check if an element belongs to the active media player bar / playback controls
+  function isMediaControllerElement(elem) {
+    if (!elem) return false;
+    return !!(
+      elem.closest &&
+      elem.closest('ytmusic-player-bar, .ytp-chrome-bottom, #movie_player, .html5-video-player')
+    );
+  }
+
+  // Clean all shield artifacts specifically from live media player bars
+  function cleanPlayerBarShields() {
+    const playerBars = document.querySelectorAll('ytmusic-player-bar, #movie_player, .ytp-chrome-bottom');
+    playerBars.forEach(pb => {
+      pb.querySelectorAll('.oe-shield-banner, .oe-revert-tag, .oe-player-shield').forEach(el => el.remove());
+      pb.querySelectorAll('.oe-shielded-container, [data-oe-shielded], [data-oe-revealed], [data-oe-dismissed]').forEach(el => {
+        el.classList.remove('oe-shielded-container', 'oe-revealed-container', 'oe-dismissed-container');
+        el.removeAttribute('data-oe-shielded');
+        el.removeAttribute('data-oe-revealed');
+        el.removeAttribute('data-oe-dismissed');
+        el.removeAttribute('data-oe-matched-name');
+        el.removeAttribute('data-oe-orig-pos');
+        el.removeAttribute('data-oe-orig-minheight');
+        el.style.minHeight = '';
+        el.style.color = '';
+        el.style.textShadow = '';
+      });
+    });
+  }
+
+  // Warning toast when autoSkip is disabled
+  function showWarningToast(personName, songTitle) {
+    try {
+      let existing = document.querySelector('.oe-warn-toast');
+      if (existing) {
+        if (existing.getAttribute('data-track') === songTitle) return;
+        existing.remove();
+      }
+
+      const toast = document.createElement('div');
+      toast.className = 'oe-skip-toast oe-warn-toast';
+      toast.setAttribute('data-track', songTitle);
+      toast.innerHTML = `
+        <div class="oe-skip-toast-icon">⚠️</div>
+        <div class="oe-skip-toast-content">
+          <div class="oe-skip-toast-badge" style="color: #fbbf24;">🛡️ OE WATCHER // MEDYA UYARISI</div>
+          <div class="oe-skip-toast-title">Kara listedeki <strong>${escapeHTML(personName)}</strong> çalıyor</div>
+          <div class="oe-skip-toast-desc">${escapeHTML(songTitle)}</div>
+        </div>
+        <div style="display: flex; gap: 6px; margin-left: 8px;">
+          <button type="button" class="oe-btn-skip-now" style="background: #e11d48; color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+            ⏩ Atla
+          </button>
+          <button type="button" class="oe-btn-dismiss-warn" style="background: rgba(255,255,255,0.15); color: #fff; border: none; border-radius: 6px; padding: 4px 8px; font-size: 0.75rem; cursor: pointer;">
+            ✕
+          </button>
+        </div>
+      `;
+
+      const btnSkip = toast.querySelector('.oe-btn-skip-now');
+      attachSafeAction(btnSkip, () => {
+        const nextBtn = document.querySelector('ytmusic-player-bar .next-button, #right-controls .next-button, .next-button, .ytp-next-button');
+        if (nextBtn) nextBtn.click();
+        const video = document.querySelector('video');
+        if (video) { try { video.currentTime = video.duration || 99999; } catch(_) {} }
+        toast.remove();
+      });
+
+      const btnDismiss = toast.querySelector('.oe-btn-dismiss-warn');
+      attachSafeAction(btnDismiss, () => {
+        toast.remove();
+      });
+
+      document.body.appendChild(toast);
+    } catch (_) {}
+  }
+
   // Real-time YouTube Music & YouTube Player Monitoring & Auto-Skip
   function initMediaWatcher() {
     const hostname = window.location.hostname;
@@ -320,7 +396,10 @@
     let isSkipping = false;
 
     function checkCurrentPlaying() {
-      if (!config.enabled || isCurrentPageExcluded()) return;
+      if (!config.enabled || isCurrentPageExcluded()) {
+        cleanPlayerBarShields();
+        return;
+      }
 
       let title = '';
       let artist = '';
@@ -328,13 +407,13 @@
       if (isYTMusic) {
         const titleEl = document.querySelector('ytmusic-player-bar .title, .title.ytmusic-player-bar, yt-formatted-string.title');
         const bylineEl = document.querySelector('ytmusic-player-bar .byline, .byline.ytmusic-player-bar, yt-formatted-string.byline');
-        title = titleEl ? titleEl.textContent.trim() : '';
-        artist = bylineEl ? bylineEl.textContent.trim() : '';
+        title = (titleEl ? (titleEl.getAttribute('title') || titleEl.textContent) : '').trim();
+        artist = (bylineEl ? (bylineEl.getAttribute('title') || bylineEl.textContent) : '').trim();
       } else if (isYouTube) {
         const titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, #title h1, .ytp-title-link');
         const channelEl = document.querySelector('#channel-name yt-formatted-string, #owner ytd-channel-name');
-        title = titleEl ? titleEl.textContent.trim() : '';
-        artist = channelEl ? channelEl.textContent.trim() : '';
+        title = (titleEl ? (titleEl.getAttribute('title') || titleEl.textContent) : '').trim();
+        artist = (channelEl ? (channelEl.getAttribute('title') || channelEl.textContent) : '').trim();
       }
 
       // MediaSession API fallback
@@ -350,6 +429,9 @@
 
       const match = checkTextMatch(artist) || checkTextMatch(title) || checkTextMatch(`${artist} - ${title}`);
       if (match) {
+        // Always ensure live player bar is not cluttered by card shields
+        cleanPlayerBarShields();
+
         if (config.autoSkip) {
           if (isSkipping) return;
           isSkipping = true;
@@ -390,29 +472,38 @@
 
           setTimeout(() => {
             isSkipping = false;
-          }, 1200);
+          }, 1000);
+        } else {
+          // Auto-skip disabled: show lightweight warning toast without breaking player UI
+          showWarningToast(match.displayName, title || artist);
         }
       } else {
         lastSkippedTrackKey = trackKey;
         isSkipping = false;
+        // Clean any leftover player bar shield and warning toast immediately
+        cleanPlayerBarShields();
+        const existingWarn = document.querySelector('.oe-warn-toast');
+        if (existingWarn) existingWarn.remove();
       }
     }
 
-    // Interval check every 800ms
-    setInterval(checkCurrentPlaying, 800);
+    // Interval check every 400ms for fast reaction
+    setInterval(checkCurrentPlaying, 400);
 
-    // MutationObserver on player bar for immediate reaction
-    const playerBar = document.querySelector('ytmusic-player-bar') || document.querySelector('#movie_player') || document.body;
-    if (playerBar) {
-      const observer = new MutationObserver(() => checkCurrentPlaying());
-      observer.observe(playerBar, { childList: true, subtree: true, characterData: true });
-    }
+    // MutationObserver on body/playerBar for instant playback change reaction
+    const observer = new MutationObserver(() => checkCurrentPlaying());
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   }
 
   // Find the exact block card or container for modern web layouts
   function findBlockContainer(node) {
     if (!node) return null;
     let curr = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+
+    // Never card-shield live media player controls
+    if (isMediaControllerElement(curr)) {
+      return null;
+    }
 
     while (curr && curr !== document.body && curr !== document.documentElement) {
       for (const sel of BLOCK_SELECTORS) {
@@ -430,7 +521,176 @@
       curr = curr.parentElement;
     }
 
-    return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if (isMediaControllerElement(node)) return null;
+      return node;
+    }
+    if (node.parentElement && isMediaControllerElement(node.parentElement)) {
+      return null;
+    }
+    return node.parentElement;
+  }
+
+  // Completely unshield a container and restore its original layout & interactivity
+  function unshieldElement(container) {
+    if (!container) return;
+
+    const banner = container.querySelector(':scope > .oe-shield-banner, .oe-shield-banner');
+    if (banner) banner.remove();
+    const revertTag = container.querySelector(':scope > .oe-revert-tag, .oe-revert-tag');
+    if (revertTag) revertTag.remove();
+
+    container.removeAttribute('data-oe-shielded');
+    container.removeAttribute('data-oe-revealed');
+    container.removeAttribute('data-oe-dismissed');
+    container.removeAttribute('data-oe-matched-name');
+    container.classList.remove('oe-shielded-container', 'oe-revealed-container', 'oe-dismissed-container');
+
+    if (container.getAttribute('data-oe-orig-pos') === 'static') {
+      container.style.position = '';
+      container.removeAttribute('data-oe-orig-pos');
+    }
+    if (container.getAttribute('data-oe-orig-minheight') === 'true') {
+      container.style.minHeight = '';
+      container.removeAttribute('data-oe-orig-minheight');
+    }
+    container.style.color = '';
+    container.style.textShadow = '';
+    container.style.maxHeight = '';
+    container.style.height = '';
+    container.style.overflow = '';
+  }
+
+  // Update existing shield banner info if matched person changed dynamically
+  function updateShieldBanner(container, matchInfo) {
+    const banner = container.querySelector(':scope > .oe-shield-banner, .oe-shield-banner');
+    if (!banner) return;
+    const titleEl = banner.querySelector('.oe-shield-title');
+    if (titleEl) {
+      const subDetails = matchInfo.category ? `[${matchInfo.category}]` : '';
+      titleEl.innerHTML = `Bu içerikte kara listedeki <strong>${escapeHTML(matchInfo.displayName)}</strong> ${escapeHTML(subDetails)} geçiyor.`;
+    }
+    const descEl = banner.querySelector('.oe-shield-desc');
+    if (descEl) {
+      const topicsStr = matchInfo.topics && matchInfo.topics.length > 0 ? ` • ${matchInfo.topics.slice(0, 2).join(', ')}` : '';
+      descEl.innerHTML = `Bu içeriği görmek istiyor musunuz?${escapeHTML(topicsStr)}`;
+    }
+  }
+
+  // Check if a container element still has text or attribute matching blacklisted patterns,
+  // strictly excluding any OE Watcher UI elements (banners, revert tags).
+  function checkContainerForMatch(container) {
+    if (!container || compiledMatchers.length === 0) return null;
+
+    // 1. Check relevant attributes on elements inside container
+    const attrNodes = container.querySelectorAll(
+      'a[title], a[aria-label], yt-formatted-string[title], yt-formatted-string[aria-label], [data-testid="UserCell"] [aria-label], article [aria-label], img[alt]'
+    );
+    for (let i = 0; i < attrNodes.length; i++) {
+      const el = attrNodes[i];
+      if (el.closest('.oe-shield-banner') || el.closest('.oe-revert-tag') || el.closest('.oe-player-shield')) {
+        continue;
+      }
+      for (const attr of ['title', 'aria-label', 'alt']) {
+        const val = el.getAttribute(attr);
+        if (val) {
+          const m = checkTextMatch(val);
+          if (m) return m;
+        }
+      }
+    }
+
+    // 2. Check text nodes inside container (excluding banner/revert-tag)
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: function (node) {
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          if (
+            parent.closest('.oe-shield-banner') ||
+            parent.closest('.oe-revert-tag') ||
+            parent.closest('.oe-player-shield')
+          ) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          const tag = parent.tagName.toLowerCase();
+          if (tag === 'script' || tag === 'style') {
+            return NodeFilter.FILTER_REJECT;
+          }
+          if (node.nodeValue.trim().length < 3) {
+            return NodeFilter.FILTER_SKIP;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    let textNode = walker.nextNode();
+    while (textNode) {
+      const m = checkTextMatch(textNode.nodeValue);
+      if (m) return m;
+      textNode = walker.nextNode();
+    }
+
+    return null;
+  }
+
+  // Dynamically re-evaluate all currently shielded or revealed containers:
+  // If their content changed (e.g. track change, virtual scroll, SPA update) and is now safe,
+  // AUTOMATICALLY unshield them!
+  function recheckShieldedContainers() {
+    // 1. Check all shielded containers
+    const shielded = document.querySelectorAll('[data-oe-shielded]');
+    shielded.forEach(container => {
+      if (isMediaControllerElement(container)) {
+        unshieldElement(container);
+        return;
+      }
+
+      const match = checkContainerForMatch(container);
+      if (!match) {
+        // Content changed and no longer matches blacklist! Unshield it cleanly.
+        unshieldElement(container);
+      } else {
+        // Content still matches. If the matched person changed, update banner info.
+        const prevPerson = container.getAttribute('data-oe-matched-name');
+        if (prevPerson && prevPerson !== match.displayName) {
+          container.setAttribute('data-oe-matched-name', match.displayName);
+          updateShieldBanner(container, match);
+        }
+      }
+    });
+
+    // 2. Check all revealed containers
+    const revealed = document.querySelectorAll('[data-oe-revealed]');
+    revealed.forEach(container => {
+      if (isMediaControllerElement(container)) {
+        unshieldElement(container);
+        return;
+      }
+
+      const match = checkContainerForMatch(container);
+      if (!match) {
+        // Content changed and is safe! Clean up revealed state & revert tag.
+        container.removeAttribute('data-oe-revealed');
+        container.removeAttribute('data-oe-matched-name');
+        container.classList.remove('oe-revealed-container');
+        const tag = container.querySelector(':scope > .oe-revert-tag, .oe-revert-tag');
+        if (tag) tag.remove();
+      } else {
+        const prevPerson = container.getAttribute('data-oe-matched-name');
+        if (prevPerson && prevPerson !== match.displayName) {
+          // Recycled to a different blacklisted person: re-shield with new person
+          container.removeAttribute('data-oe-revealed');
+          container.classList.remove('oe-revealed-container');
+          const tag = container.querySelector(':scope > .oe-revert-tag, .oe-revert-tag');
+          if (tag) tag.remove();
+          shieldElement(container, match);
+        }
+      }
+    });
   }
 
   // Apply shield directly inside container as an overlay without disturbing virtual scrollers
@@ -438,15 +698,22 @@
     if (!container || container.hasAttribute('data-oe-shielded') || container.hasAttribute('data-oe-revealed')) {
       return;
     }
+    if (isMediaControllerElement(container)) {
+      return;
+    }
+
     container.setAttribute('data-oe-shielded', 'true');
+    container.setAttribute('data-oe-matched-name', matchInfo.displayName || '');
 
     // Ensure container has relative positioning context and minimum height for overlay
     const computed = window.getComputedStyle(container);
     if (computed.position === 'static') {
       container.style.position = 'relative';
+      container.setAttribute('data-oe-orig-pos', 'static');
     }
     if (container.offsetHeight < 110) {
       container.style.minHeight = '110px';
+      container.setAttribute('data-oe-orig-minheight', 'true');
     }
 
     container.classList.add('oe-shielded-container');
@@ -490,11 +757,14 @@
     const btnReveal = banner.querySelector('.oe-btn-reveal');
     function doReveal() {
       container.setAttribute('data-oe-revealed', 'true');
+      container.setAttribute('data-oe-matched-name', matchInfo.displayName || '');
       container.removeAttribute('data-oe-shielded');
       container.classList.remove('oe-shielded-container');
       container.classList.add('oe-revealed-container');
 
-      container.style.minHeight = '';
+      if (container.getAttribute('data-oe-orig-minheight') === 'true') {
+        container.style.minHeight = '';
+      }
       container.style.color = '';
       container.style.textShadow = '';
 
@@ -511,6 +781,7 @@
       attachSafeAction(rehideBtn, () => {
         revertTag.remove();
         container.removeAttribute('data-oe-revealed');
+        container.removeAttribute('data-oe-matched-name');
         container.classList.remove('oe-revealed-container');
         shieldElement(container, matchInfo);
       });
@@ -556,8 +827,6 @@
 
     // Append banner inside container as an absolute overlay
     container.appendChild(banner);
-    shieldedCount++;
-    chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: shieldedCount });
   }
 
   // Scan text nodes & key element attributes across document
@@ -572,16 +841,25 @@
 
     if (compiledMatchers.length === 0) return;
 
+    // 1. Clear any accidental shield on active media player controls
+    cleanPlayerBarShields();
+
+    // 2. Dynamically recheck existing shields to unshield any elements that changed to safe content
+    recheckShieldedContainers();
+
     const containersToShield = new Map();
 
     function checkCandidate(str, elem) {
       if (!str || str.length < 3) return;
+      if (isMediaControllerElement(elem)) return; // DO NOT card-shield live player controls!
+
       const folded = foldTurkish(str);
       for (const m of compiledMatchers) {
         if (m.regex.test(folded)) {
           const container = findBlockContainer(elem);
           if (
             container &&
+            !isMediaControllerElement(container) &&
             !container.hasAttribute('data-oe-shielded') &&
             !container.hasAttribute('data-oe-revealed') &&
             !containersToShield.has(container)
@@ -593,7 +871,7 @@
       }
     }
 
-    // 1. Scan attributes on targeted elements (titles, handles, media labels)
+    // 3. Scan attributes on targeted elements (titles, handles, media labels)
     const attrSelector = 'a[title], a[aria-label], yt-formatted-string[title], yt-formatted-string[aria-label], [data-testid="UserCell"] [aria-label], article [aria-label], img[alt]';
     const attrNodes = (rootNode === document.body ? document : rootNode).querySelectorAll(attrSelector);
     for (let i = 0; i < attrNodes.length; i++) {
@@ -602,7 +880,8 @@
         el.closest('.oe-shield-banner') ||
         el.closest('.oe-revert-tag') ||
         el.closest('[data-oe-shielded]') ||
-        el.closest('[data-oe-revealed]')
+        el.closest('[data-oe-revealed]') ||
+        isMediaControllerElement(el)
       ) {
         continue;
       }
@@ -617,7 +896,7 @@
       if (alt) checkCandidate(alt, el);
     }
 
-    // 2. Scan text nodes using TreeWalker
+    // 4. Scan text nodes using TreeWalker
     const walker = document.createTreeWalker(
       rootNode,
       NodeFilter.SHOW_TEXT,
@@ -634,7 +913,8 @@
             parent.closest('.oe-shield-banner') ||
             parent.closest('.oe-revert-tag') ||
             parent.closest('[data-oe-shielded]') ||
-            parent.closest('[data-oe-revealed]')
+            parent.closest('[data-oe-revealed]') ||
+            isMediaControllerElement(parent)
           ) {
             return NodeFilter.FILTER_REJECT;
           }
@@ -652,10 +932,14 @@
       textNode = walker.nextNode();
     }
 
-    // Execute shielding on detected containers
+    // Execute shielding on newly detected containers
     for (const [container, matchInfo] of containersToShield.entries()) {
       shieldElement(container, matchInfo);
     }
+
+    // Synchronize live badge count
+    shieldedCount = document.querySelectorAll('[data-oe-shielded]').length;
+    chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: shieldedCount });
   }
 
   // Trigger debounced scan for dynamic SPAs

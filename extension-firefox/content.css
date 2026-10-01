@@ -385,3 +385,23 @@ ytmusic-player-queue-item .oe-shield-title {
   text-overflow: ellipsis !important;
   max-width: 280px !important;
 }
+
+/* Media Player Controls Safeguard: never deform player bars or lock titles */
+ytmusic-player-bar .oe-shielded-container,
+ytmusic-player-bar [data-oe-shielded],
+.ytp-chrome-bottom .oe-shielded-container,
+.ytp-chrome-bottom [data-oe-shielded],
+#movie_player .ytp-chrome-bottom [data-oe-shielded] {
+  min-height: unset !important;
+  max-height: unset !important;
+  position: static !important;
+  overflow: visible !important;
+  color: inherit !important;
+  text-shadow: none !important;
+}
+
+ytmusic-player-bar .oe-shield-banner,
+.ytp-chrome-bottom .oe-shield-banner {
+  display: none !important;
+}
+
