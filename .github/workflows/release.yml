@@ -29,6 +29,9 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install Zip & Utilities
         run: |
           which zip || brew install zip
