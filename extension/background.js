@@ -1,6 +1,6 @@
-// OE Watcher Chrome Extension - Service Worker (Background)
 const DEFAULT_CONFIG = {
   enabled: true,
+  autoSkip: true,
   apiUrl: "http://127.0.0.1:8080",
   blurIntensity: "medium", // low, medium, high
   lastSync: null,
@@ -200,8 +200,11 @@ async function syncWithOEWatcher() {
       }
     }
 
+    const autoSkip = data.auto_skip !== undefined ? !!data.auto_skip : (settings.autoSkip !== undefined ? settings.autoSkip : true);
+
     const updatedSettings = {
       ...settings,
+      autoSkip: autoSkip,
       lastSync: new Date().toISOString(),
       personsCount: blacklist.length
     };
@@ -215,7 +218,7 @@ async function syncWithOEWatcher() {
       apiConnected: true
     });
 
-    console.log(`[OE Watcher Extension] Senkronizasyon başarılı: ${blacklist.length} kişi, ${keywords.length} kelime yüklendi.`);
+    console.log(`[OE Watcher Extension] Senkronizasyon başarılı: ${blacklist.length} kişi, ${keywords.length} kelime yüklendi. (AutoSkip: ${autoSkip})`);
     return { success: true, count: blacklist.length };
   } catch (err) {
     console.warn('[OE Watcher Extension] Yerel API erişilemedi, dahili veritabanı kontrol ediliyor:', err.message);
@@ -226,6 +229,7 @@ async function syncWithOEWatcher() {
       const fallback = await loadBundledFallback();
       const updatedSettings = {
         ...settings,
+        autoSkip: settings.autoSkip !== undefined ? settings.autoSkip : true,
         lastSync: new Date().toISOString(),
         personsCount: fallback.persons.length
       };
@@ -266,6 +270,52 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse(data);
     })();
     return true; // Keep channel open for async response
+  }
+
+  if (msg.type === 'SET_AUTO_SKIP') {
+    (async () => {
+      const { settings = DEFAULT_CONFIG } = await chrome.storage.local.get('settings');
+      const updated = { ...settings, autoSkip: !!msg.autoSkip };
+      await chrome.storage.local.set({ settings: updated });
+
+      chrome.tabs.query({}, (tabs) => {
+        for (const t of tabs) {
+          if (t.id) chrome.tabs.sendMessage(t.id, { type: 'CONFIG_CHANGED', settings: updated }).catch(() => {});
+        }
+      });
+
+      const baseUrl = settings.apiUrl || "http://127.0.0.1:8080";
+      try {
+        await fetch(`${baseUrl}/api/extension/auto-skip`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auto_skip: !!msg.autoSkip })
+        });
+      } catch (e) {}
+
+      sendResponse({ success: true, autoSkip: updated.autoSkip });
+    })();
+    return true;
+  }
+
+  if (msg.type === 'MEDIA_SKIPPED') {
+    (async () => {
+      console.log('[OE Watcher Background] Medya otomatik atlandı:', msg.person, msg.track);
+      const { settings = DEFAULT_CONFIG } = await chrome.storage.local.get('settings');
+      const baseUrl = settings.apiUrl || "http://127.0.0.1:8080";
+      try {
+        await fetch(`${baseUrl}/api/extension/skip`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            track: msg.track,
+            person: msg.person
+          })
+        });
+      } catch (e) {}
+      sendResponse({ success: true });
+    })();
+    return true;
   }
 
   if (msg.type === 'SYNC_NOW') {

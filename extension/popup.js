@@ -1,6 +1,7 @@
 // OE Watcher Chrome Extension - Popup Logic
 document.addEventListener('DOMContentLoaded', async () => {
   const toggleEnabled = document.getElementById('toggleEnabled');
+  const toggleAutoSkip = document.getElementById('toggleAutoSkip');
   const statusBadge = document.getElementById('statusBadge');
   const statusText = document.getElementById('statusText');
   const statTabCount = document.getElementById('statTabCount');
@@ -25,8 +26,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const persons = data.persons || [];
   let excludeList = data.excludeList || [];
 
-  // Toggle switch
+  // Toggle switches
   toggleEnabled.checked = settings.enabled !== false;
+  if (toggleAutoSkip) {
+    toggleAutoSkip.checked = settings.autoSkip !== false;
+  }
 
   // Person count
   const count = persons.length || settings.personsCount || 0;
@@ -99,11 +103,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   } catch (_) {}
 
-  // 3. Toggle change handler
+  // 3. Toggle change handlers
   toggleEnabled.addEventListener('change', async () => {
     const updatedSettings = { ...settings, enabled: toggleEnabled.checked };
     await chrome.storage.local.set({ settings: updatedSettings });
   });
+
+  if (toggleAutoSkip) {
+    toggleAutoSkip.addEventListener('change', async () => {
+      chrome.runtime.sendMessage({
+        type: 'SET_AUTO_SKIP',
+        autoSkip: toggleAutoSkip.checked
+      });
+    });
+  }
 
   // 4. Whitelist button handler
   if (btnToggleExcludeUrl) {

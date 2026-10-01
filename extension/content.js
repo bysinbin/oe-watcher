@@ -4,6 +4,7 @@
 
   let config = {
     enabled: true,
+    autoSkip: true,
     persons: [],
     aliases: {},
     excludeList: [],
@@ -13,6 +14,7 @@
   let compiledMatchers = [];
   let shieldedCount = 0;
   let scanTimer = null;
+  let mediaWatcherInitialized = false;
 
   // Targeted block and card selectors for exact in-card shielding
   const BLOCK_SELECTORS = [
@@ -34,6 +36,11 @@
     'ytd-movie-renderer',
     'ytd-show-renderer',
     'yt-lockup-view-model',
+    // YouTube Music (Queue items, tracks, cards)
+    'ytmusic-player-queue-item',
+    'ytmusic-responsive-list-item-renderer',
+    'ytmusic-two-row-item-renderer',
+    'ytmusic-video-renderer',
     // Reddit
     'shreddit-post',
     '[data-testid="post-container"]',
@@ -163,6 +170,7 @@
     chrome.runtime.sendMessage({ type: 'GET_DATA' }, (response) => {
       if (!response) return;
       config.enabled = response.settings ? response.settings.enabled !== false : true;
+      config.autoSkip = response.settings && response.settings.autoSkip !== undefined ? response.settings.autoSkip !== false : true;
       config.persons = response.persons || [];
       config.aliases = response.aliases || {};
       config.excludeList = response.excludeList || [];
@@ -188,6 +196,11 @@
       compileMatchers();
       scanDocument();
       startObserver();
+
+      if (!mediaWatcherInitialized) {
+        mediaWatcherInitialized = true;
+        initMediaWatcher();
+      }
     });
   }
 
@@ -253,6 +266,146 @@
           regex: regex
         });
       }
+    }
+  }
+
+  // Fast text matching against compiled blacklist matchers
+  function checkTextMatch(text) {
+    if (!text || typeof text !== 'string') return null;
+    const clean = text.trim();
+    if (clean.length < 2) return null;
+    const folded = foldTurkish(clean);
+    for (const m of compiledMatchers) {
+      if (m.regex && m.regex.test(folded)) {
+        return m;
+      }
+    }
+    return null;
+  }
+
+  // Toast notification for auto-skipped tracks
+  function showSkipToast(personName, songTitle) {
+    try {
+      let existing = document.querySelector('.oe-skip-toast');
+      if (existing) existing.remove();
+
+      const toast = document.createElement('div');
+      toast.className = 'oe-skip-toast';
+      toast.innerHTML = `
+        <div class="oe-skip-toast-icon">⏩</div>
+        <div class="oe-skip-toast-content">
+          <div class="oe-skip-toast-badge">🛡️ OE WATCHER // OTOMATİK GEÇİLDİ</div>
+          <div class="oe-skip-toast-title">Kara listedeki <strong>${escapeHTML(personName)}</strong> atlandı</div>
+          <div class="oe-skip-toast-desc">${escapeHTML(songTitle)}</div>
+        </div>
+      `;
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.add('oe-fade-out');
+        setTimeout(() => toast.remove(), 400);
+      }, 3500);
+    } catch (_) {}
+  }
+
+  // Real-time YouTube Music & YouTube Player Monitoring & Auto-Skip
+  function initMediaWatcher() {
+    const hostname = window.location.hostname;
+    const isYTMusic = hostname === 'music.youtube.com';
+    const isYouTube = hostname.includes('youtube.com') && !isYTMusic;
+
+    if (!isYTMusic && !isYouTube) return;
+
+    let lastSkippedTrackKey = '';
+    let isSkipping = false;
+
+    function checkCurrentPlaying() {
+      if (!config.enabled || isCurrentPageExcluded()) return;
+
+      let title = '';
+      let artist = '';
+
+      if (isYTMusic) {
+        const titleEl = document.querySelector('ytmusic-player-bar .title, .title.ytmusic-player-bar, yt-formatted-string.title');
+        const bylineEl = document.querySelector('ytmusic-player-bar .byline, .byline.ytmusic-player-bar, yt-formatted-string.byline');
+        title = titleEl ? titleEl.textContent.trim() : '';
+        artist = bylineEl ? bylineEl.textContent.trim() : '';
+      } else if (isYouTube) {
+        const titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, #title h1, .ytp-title-link');
+        const channelEl = document.querySelector('#channel-name yt-formatted-string, #owner ytd-channel-name');
+        title = titleEl ? titleEl.textContent.trim() : '';
+        artist = channelEl ? channelEl.textContent.trim() : '';
+      }
+
+      // MediaSession API fallback
+      if ((!artist || !title) && navigator.mediaSession && navigator.mediaSession.metadata) {
+        if (!title) title = navigator.mediaSession.metadata.title || '';
+        if (!artist) artist = navigator.mediaSession.metadata.artist || '';
+      }
+
+      if (!title && !artist) return;
+
+      const trackKey = `${artist}:::${title}`;
+      if (trackKey === lastSkippedTrackKey && !isSkipping) return;
+
+      const match = checkTextMatch(artist) || checkTextMatch(title) || checkTextMatch(`${artist} - ${title}`);
+      if (match) {
+        if (config.autoSkip) {
+          if (isSkipping) return;
+          isSkipping = true;
+          lastSkippedTrackKey = trackKey;
+
+          console.warn(`[OE Watcher] Kara liste tespit edildi: "${match.displayName}" (${artist} - ${title}). Şarkı atlanıyor...`);
+          showSkipToast(match.displayName, title || artist);
+
+          // 1. Click Next track button
+          const nextBtn = document.querySelector(
+            'ytmusic-player-bar .next-button, #right-controls .next-button, .next-button, .ytp-next-button'
+          );
+          if (nextBtn) {
+            nextBtn.click();
+          }
+
+          // 2. Fast forward video element to guarantee transition
+          const video = document.querySelector('video');
+          if (video) {
+            try {
+              video.currentTime = video.duration || 99999;
+            } catch (_) {}
+          }
+
+          // 3. Inform background worker to register in history
+          chrome.runtime.sendMessage({
+            type: 'MEDIA_SKIPPED',
+            track: {
+              app: isYTMusic ? 'Google Chrome (YouTube Music)' : 'Google Chrome (YouTube)',
+              artist: artist,
+              title: title,
+              state: 'playing'
+            },
+            person: match.displayName,
+            category: match.category,
+            topics: match.topics
+          });
+
+          setTimeout(() => {
+            isSkipping = false;
+          }, 1200);
+        }
+      } else {
+        lastSkippedTrackKey = trackKey;
+        isSkipping = false;
+      }
+    }
+
+    // Interval check every 800ms
+    setInterval(checkCurrentPlaying, 800);
+
+    // MutationObserver on player bar for immediate reaction
+    const playerBar = document.querySelector('ytmusic-player-bar') || document.querySelector('#movie_player') || document.body;
+    if (playerBar) {
+      const observer = new MutationObserver(() => checkCurrentPlaying());
+      observer.observe(playerBar, { childList: true, subtree: true, characterData: true });
     }
   }
 
@@ -554,7 +707,9 @@
   // Listen for setting changes from popup & background
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.settings) {
-      config.enabled = changes.settings.newValue ? changes.settings.newValue.enabled !== false : true;
+      const s = changes.settings.newValue || {};
+      config.enabled = s.enabled !== false;
+      config.autoSkip = s.autoSkip !== false;
       if (!config.enabled) {
         cleanAllShields();
         chrome.runtime.sendMessage({ type: 'UPDATE_BADGE', count: 0 });
@@ -562,7 +717,7 @@
         scanDocument();
       }
     }
-    if (area === 'local' && (changes.persons || changes.aliases || changes.excludeList)) {
+    if (area === 'local' && (changes.persons || changes.aliases || changes.excludeList || changes.keywords)) {
       init();
     }
   });

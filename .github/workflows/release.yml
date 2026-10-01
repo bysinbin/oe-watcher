@@ -22,13 +22,20 @@ jobs:
           go-version: '1.22'
           cache: true
 
+      - name: Setup Java 17 for Android
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
       - name: Install Zip & Utilities
         run: |
           which zip || brew install zip
 
-      - name: Build All Platforms & Browser Extensions
+      - name: Build All Platforms, Browser Extensions & Android
         run: |
-          chmod +x ./build_all.sh ./build_app.sh ./build_dmg.sh ./build_extensions.sh
+          chmod +x ./build_all.sh ./build_app.sh ./build_dmg.sh ./build_extensions.sh ./build_android.sh ./android/gradlew
           ./build_all.sh
 
       - name: Archive macOS .app
@@ -54,5 +61,6 @@ jobs:
             dist/oe-watcher-chrome.zip
             dist/oe-watcher-firefox.xpi
             dist/oe-watcher-firefox.zip
+            dist/oe-watcher-android.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

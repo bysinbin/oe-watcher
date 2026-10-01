@@ -109,7 +109,7 @@ func NewServer(application *app.App, port int) *Server {
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	// Public Auth endpoints
+	// Public Auth & Extension endpoints
 	mux.HandleFunc("/api/auth-status", s.handleAuthStatus)
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/logout", s.handleLogout)
@@ -117,6 +117,8 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/extension/exclude", s.handleRuleExclude)
 	mux.HandleFunc("/api/extension/keyword", s.handleRuleKeyword)
 	mux.HandleFunc("/api/extension/person", s.handleExtensionPerson)
+	mux.HandleFunc("/api/extension/auto-skip", s.handleExtensionAutoSkip)
+	mux.HandleFunc("/api/extension/skip", s.handleExtensionSkip)
 
 	// Protected API endpoints
 	mux.HandleFunc("/api/events", s.authMiddleware(s.handleEvents))
@@ -608,29 +610,35 @@ func (s *Server) handlePersons(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if category != "" && !strings.EqualFold(category, "HEPSİ") {
-			hasCat := false
-			for _, t := range p.Tags {
-				if strings.EqualFold(t, category) {
-					hasCat = true
-					break
+		if category != "" {
+			foldCat := foldTurkishStr(category)
+			if foldCat != "" && foldCat != "hepsi" && foldCat != "tumu" && foldCat != "all" {
+				hasCat := false
+				for _, t := range p.Tags {
+					if foldTurkishStr(t) == foldCat {
+						hasCat = true
+						break
+					}
 				}
-			}
-			if !hasCat {
-				continue
+				if !hasCat {
+					continue
+				}
 			}
 		}
 
-		if topic != "" && !strings.EqualFold(topic, "TÜM KONULAR") {
-			hasTopic := false
-			for _, top := range p.Topics {
-				if strings.EqualFold(top, topic) {
-					hasTopic = true
-					break
+		if topic != "" {
+			foldTop := foldTurkishStr(topic)
+			if foldTop != "" && foldTop != "tum konular" && foldTop != "hepsi" && foldTop != "tumu" && foldTop != "all" {
+				hasTopic := false
+				for _, top := range p.Topics {
+					if foldTurkishStr(top) == foldTop {
+						hasTopic = true
+						break
+					}
 				}
-			}
-			if !hasTopic {
-				continue
+				if !hasTopic {
+					continue
+				}
 			}
 		}
 
@@ -890,6 +898,71 @@ func (s *Server) handleExtensionSync(w http.ResponseWriter, r *http.Request) {
 		"aliases":      snap.Aliases,
 		"exclude_list": snap.ExcludeList,
 		"keywords":     snap.Keywords,
+		"auto_skip":    s.app.GetState().AutoSkip,
+	})
+}
+
+func (s *Server) handleExtensionAutoSkip(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":   true,
+			"auto_skip": s.app.GetState().AutoSkip,
+		})
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var req struct {
+			AutoSkip bool `json:"auto_skip"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.app.SetAutoSkip(req.AutoSkip)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":   true,
+			"auto_skip": s.app.GetState().AutoSkip,
+		})
+		return
+	}
+
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (s *Server) handleExtensionSkip(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	err := s.app.SkipCurrent()
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
 	})
 }
 
@@ -1044,6 +1117,19 @@ func (s *Server) handleTestWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusBadRequest)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Geçersiz webhook türü ('discord' veya 'telegram' olmalı)"})
+}
+
+func foldTurkishStr(s string) string {
+	s = strings.ReplaceAll(s, "İ", "i")
+	s = strings.ReplaceAll(s, "I", "ı")
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, "ı", "i")
+	s = strings.ReplaceAll(s, "ç", "c")
+	s = strings.ReplaceAll(s, "ğ", "g")
+	s = strings.ReplaceAll(s, "ö", "o")
+	s = strings.ReplaceAll(s, "ş", "s")
+	s = strings.ReplaceAll(s, "ü", "u")
+	return strings.TrimSpace(s)
 }
 
 

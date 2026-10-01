@@ -18,7 +18,7 @@ func TestServerAuthentication(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.WebPassword = "testsecretpassword"
-	cfg.WebPort = 8089
+	cfg.WebPort = 18099
 
 	application := app.NewAppWithConfig(cfg, "", tempDir)
 	_ = application.Init(false)
@@ -33,7 +33,7 @@ func TestServerAuthentication(t *testing.T) {
 	}()
 	time.Sleep(100 * time.Millisecond)
 
-	baseURL := "http://127.0.0.1:8089"
+	baseURL := "http://127.0.0.1:18099"
 
 	// 1. Check auth status: should require auth and be unauthenticated
 	resp, err := http.Get(baseURL + "/api/auth-status")

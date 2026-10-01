@@ -2,7 +2,7 @@
 
 **OE Watcher**, hem masaüstünde çalan müzikleri denetleyen hem de web tarayıcınızda gezinirken istemediğiniz kişilere ait paylaşımları, tweetleri ve videoları otomatik olarak gizleyen çift katmanlı, profesyonel bir filtreleme ekosistemidir.
 
-* **macOS**, **Windows** ve **Linux** desteği (Saf Go).
+* **macOS**, **Windows**, **Linux** ve **Android** desteği (Go + Yerel Jetpack Compose).
 * **Google Chrome**, **Edge**, **Brave** ve **Mozilla Firefox** eklentileri ile anlık web içerik sansürleme.
 * Arka planda sessizce çalışır, **`config.json`** veya modern **Web Kontrol Paneli** ile yönetilir ve **yerel ağ şifresi** ile korunur.
 
@@ -26,15 +26,15 @@ Bilgisayarınızda (**Spotify**, **Apple Music**, **YouTube**, **Brave**, **Safa
 
 ## 🌍 Platform Desteği ve Entegrasyonlar
 
-| Özellik | macOS | Windows (10 / 11) | Linux (GNOME, KDE vb.) |
-| :--- | :--- | :--- | :--- |
-| **Web İçerik Gizleme** | Chrome, Firefox, Brave, Arc, Edge | Chrome, Firefox, Edge, Brave, Opera | Chrome, Firefox, Chromium, Brave |
-| **İzlenen Medyalar** | Spotify, Apple Music, Chrome, Brave, Arc, Safari | Spotify Desktop, Chrome, Edge, GSMTC Medyaları | Spotify, Chromium, Firefox, VLC, MPRIS2 Oynatıcılar |
-| **Şarkı Geçişi (Skip)** | Donanımsal Medya Tuşu (19) + MediaRemote | Donanımsal Medya Tuşu (`VK_MEDIA_NEXT_TRACK`) | `playerctl`, D-Bus MPRIS2, `xdotool` |
-| **Kullanıcı Arayüzü** | Üst Menü Çubuğu (`🎧 OE`) + Canlı Web Paneli | Canlı Web Kontrol Paneli (`:8080`) | Canlı Web Kontrol Paneli (`:8080`) |
-| **Uyarı & Dialog** | macOS 3 Butonlu Etkileşimli Pencere | Windows Forms / PowerShell Uyarı Penceresi | `zenity` / `kdialog` / `notify-send` |
-| **Otomatik Başlatma** | macOS LaunchAgent (`-install-service`) | Windows Başlangıç Kaydı (`-install-service`) | Linux systemd user service (`-install-service`) |
-| **Veri Konumu** | `~/Library/Application Support/OEWatcher` | `%APPDATA%\OEWatcher` | `~/.config/OEWatcher` |
+| Özellik | macOS | Windows (10 / 11) | Linux (GNOME, KDE vb.) | Android (8.0+) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Web İçerik Gizleme** | Chrome, Firefox, Brave, Arc, Edge | Chrome, Firefox, Edge, Brave, Opera | Chrome, Firefox, Chromium, Brave | Desteklenen Mobil Tarayıcılar |
+| **İzlenen Medyalar** | Spotify, Apple Music, Chrome, Brave, Arc, Safari | Spotify Desktop, Chrome, Edge, GSMTC Medyaları | Spotify, Chromium, Firefox, VLC, MPRIS2 Oynatıcılar | Spotify, YT Music, Deezer, Tidal, Sistem Medyaları |
+| **Şarkı Geçişi (Skip)** | Donanımsal Medya Tuşu (19) + MediaRemote | Donanımsal Medya Tuşu (`VK_MEDIA_NEXT_TRACK`) | `playerctl`, D-Bus MPRIS2, `xdotool` | `MediaController.skipToNext()` |
+| **Kullanıcı Arayüzü** | Üst Menü Çubuğu (`🎧 OE`) + Canlı Web Paneli | Canlı Web Kontrol Paneli (`:8080`) | Canlı Web Kontrol Paneli (`:8080`) | Yerel Jetpack Compose Dark UI |
+| **Uyarı & Dialog** | macOS 3 Butonlu Etkileşimli Pencere | Windows Forms / PowerShell Uyarı Penceresi | `zenity` / `kdialog` / `notify-send` | Sistem Bildirimleri (Notification Manager) |
+| **Otomatik Başlatma** | macOS LaunchAgent (`-install-service`) | Windows Başlangıç Kaydı (`-install-service`) | Linux systemd user service (`-install-service`) | Arka Plan Medya Dinleme Servisi |
+| **Veri Konumu** | `~/Library/Application Support/OEWatcher` | `%APPDATA%\OEWatcher` | `~/.config/OEWatcher` | Dahili Depolama & Asset DB |
 
 ---
 
@@ -232,12 +232,15 @@ Kaldırmak için:
 ```
 medya-filter/
 ├── main.go                     # Giriş noktası, bayraklar ve çoklu platform servis yöneticisi
-├── build_all.sh                # macOS, Windows, Linux ve Eklenti tam derleme betiği
+├── build_all.sh                # macOS, Windows, Linux, Android ve Eklenti tam derleme betiği
 ├── build_app.sh                # Bağımsız macOS .app paketi derleme ve kod imzalama
+├── build_dmg.sh                # macOS için sürükle-bırak DMG yükleyici oluşturucu
+├── build_android.sh            # Android yerel APK derleme betiği (Gradle)
 ├── build_windows.bat           # Windows yerel derleme betiği
 ├── build_linux.sh              # Linux yerel derleme betiği
 ├── build_extensions.sh         # Chrome ve Firefox eklentilerini paketleme betiği
 ├── config.json                 # Yapılandırma dosyası (API, Port, Parola vb.)
+├── android/                    # Android yerel uygulaması (Jetpack Compose, MediaSession, NotificationListener)
 ├── extension/                  # Google Chrome / Chromium tabanlı tarayıcı eklentisi
 ├── extension-firefox/          # Mozilla Firefox (Gecko MV3) eklentisi
 ├── data/

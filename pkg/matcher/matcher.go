@@ -96,11 +96,13 @@ func (m *Matcher) RebuildIndex() {
 
 		// Add custom aliases mapped to this person
 		if customAliases != nil {
+			targetNorm := FoldDiacritics(strings.TrimSpace(p.DisplayName))
 			for alias, target := range customAliases {
-				targetMatch := strings.EqualFold(target, p.DisplayName)
+				tNorm := FoldDiacritics(strings.TrimSpace(target))
+				targetMatch := tNorm == targetNorm
 				if !targetMatch {
 					for _, pn := range names {
-						if strings.EqualFold(target, pn) {
+						if FoldDiacritics(strings.TrimSpace(pn)) == tNorm {
 							targetMatch = true
 							break
 						}
@@ -411,12 +413,12 @@ func (m *Matcher) isCategoryAllowed(tags []string) bool {
 		return true
 	}
 	for _, allowed := range m.AllowedCategories {
-		normAllowed := strings.ToUpper(strings.TrimSpace(allowed))
-		if normAllowed == "HEPSİ" || normAllowed == "TÜMÜ" || normAllowed == "ALL" || normAllowed == "" {
+		normAllowed := FoldDiacritics(strings.TrimSpace(allowed))
+		if normAllowed == "hepsi" || normAllowed == "tumu" || normAllowed == "all" || normAllowed == "" {
 			return true
 		}
 		for _, tag := range tags {
-			if strings.EqualFold(strings.TrimSpace(tag), strings.TrimSpace(allowed)) {
+			if FoldDiacritics(strings.TrimSpace(tag)) == normAllowed {
 				return true
 			}
 		}
@@ -429,12 +431,12 @@ func (m *Matcher) isTopicAllowed(topics []string) bool {
 		return true
 	}
 	for _, allowed := range m.AllowedTopics {
-		normAllowed := strings.ToUpper(strings.TrimSpace(allowed))
-		if normAllowed == "TÜM KONULAR" || normAllowed == "HEPSİ" || normAllowed == "ALL" || normAllowed == "" {
+		normAllowed := FoldDiacritics(strings.TrimSpace(allowed))
+		if normAllowed == "tum konular" || normAllowed == "hepsi" || normAllowed == "all" || normAllowed == "" {
 			return true
 		}
 		for _, topic := range topics {
-			if strings.EqualFold(strings.TrimSpace(topic), strings.TrimSpace(allowed)) {
+			if FoldDiacritics(strings.TrimSpace(topic)) == normAllowed {
 				return true
 			}
 		}

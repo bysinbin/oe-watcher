@@ -253,14 +253,33 @@ func extractYouTubeVideoID(rawURL string) string {
 			return strings.Split(id, "&")[0]
 		}
 	}
-	if strings.Contains(rawURL, "watch?") {
-		parts := strings.Split(rawURL, "watch?")
+	if strings.Contains(rawURL, "watch?") || strings.Contains(rawURL, "watch/") {
+		delim := "watch?"
+		if !strings.Contains(rawURL, "watch?") {
+			delim = "watch/"
+		}
+		parts := strings.Split(rawURL, delim)
 		if len(parts) > 1 {
 			params := strings.Split(parts[1], "&")
 			for _, p := range params {
 				if strings.HasPrefix(p, "v=") {
-					return strings.TrimPrefix(p, "v=")
+					val := strings.TrimPrefix(p, "v=")
+					return strings.Split(val, "?")[0]
 				}
+			}
+			val := strings.Split(parts[1], "?")[0]
+			val = strings.Split(val, "&")[0]
+			if len(val) >= 6 && len(val) <= 16 && !strings.Contains(val, "=") {
+				return val
+			}
+		}
+	}
+	for _, pathPart := range []string{"/shorts/", "/embed/", "/live/"} {
+		if strings.Contains(rawURL, pathPart) {
+			parts := strings.Split(rawURL, pathPart)
+			if len(parts) > 1 {
+				id := strings.Split(parts[1], "?")[0]
+				return strings.Split(id, "&")[0]
 			}
 		}
 	}
@@ -304,37 +323,85 @@ func enrichYouTubeTrack(track *models.MediaInfo) {
 	}
 }
 
-func applyOEmbed(track *models.MediaInfo, emb YTOEmbed) {
-	if emb.AuthorName != "" {
-		author := strings.TrimSuffix(emb.AuthorName, " - Topic")
-		author = strings.TrimSuffix(author, "VEVO")
-		author = strings.TrimSpace(author)
-
-		if track.Artist == "" || strings.EqualFold(track.Artist, "YouTube") || strings.EqualFold(track.Artist, "YouTube Music") {
-			track.Artist = author
+func cleanVideoDecorators(raw string) string {
+	t := strings.TrimSpace(raw)
+	suffixes := []string{
+		" (Official Video)",
+		" (Official Music Video)",
+		" (Official Audio)",
+		" (Official Lyric Video)",
+		" (Lyric Video)",
+		" (Visualizer)",
+		" [Official Video]",
+		" [Official Music Video]",
+		" [Official Audio]",
+		" [Official Lyric Video]",
+		" (Video)",
+		" (Klip)",
+		" (Audio)",
+		" [Video]",
+		" [Audio]",
+	}
+	for _, s := range suffixes {
+		if strings.HasSuffix(strings.ToLower(t), strings.ToLower(s)) {
+			t = t[:len(t)-len(s)]
+			t = strings.TrimSpace(t)
 		}
 	}
-	if emb.Title != "" {
-		t := emb.Title
-		t = strings.TrimSuffix(t, " (Official Video)")
-		t = strings.TrimSuffix(t, " (Official Music Video)")
-		t = strings.TrimSuffix(t, " (Lyric Video)")
-		t = strings.TrimSuffix(t, " (Visualizer)")
-		t = strings.TrimSuffix(t, " [Official Video]")
-		t = strings.TrimSuffix(t, " [Official Music Video]")
-		t = strings.TrimSpace(t)
+	return t
+}
 
-		if strings.Contains(t, " - ") {
-			parts := strings.SplitN(t, " - ", 2)
-			if track.Artist == "" {
-				track.Artist = strings.TrimSpace(parts[0])
-			}
-			if track.Title == "" || track.Title == emb.Title {
-				track.Title = strings.TrimSpace(parts[1])
-			}
-		} else if track.Title == "" {
-			track.Title = t
+func applyOEmbed(track *models.MediaInfo, emb YTOEmbed) {
+	author := strings.TrimSpace(emb.AuthorName)
+	author = strings.TrimSuffix(author, " - Topic")
+	author = strings.TrimSuffix(author, "VEVO")
+	author = strings.TrimSpace(author)
+
+	rawTitle := strings.TrimSpace(emb.Title)
+	cleanedTitle := cleanVideoDecorators(rawTitle)
+
+	var titleArtist, titleSong string
+	// Split by standard musical artist-title separators: " - ", " – ", " — "
+	for _, sep := range []string{" - ", " – ", " — "} {
+		if strings.Contains(cleanedTitle, sep) {
+			parts := strings.SplitN(cleanedTitle, sep, 2)
+			titleArtist = strings.TrimSpace(parts[0])
+			titleSong = cleanVideoDecorators(strings.TrimSpace(parts[1]))
+			break
 		}
+	}
+
+	var contribList []string
+	if author != "" {
+		contribList = append(contribList, author)
+	}
+	if rawTitle != "" {
+		contribList = append(contribList, rawTitle)
+	}
+	if track.Contributors != "" && !strings.Contains(track.Contributors, rawTitle) {
+		contribList = append(contribList, track.Contributors)
+	}
+
+	if titleArtist != "" {
+		// Video title has "Artist - Song" format (e.g. "Halil Sezai - Kafası Kendinden Bile Güzel")
+		track.Artist = titleArtist
+		if titleSong != "" {
+			track.Title = titleSong
+		}
+	} else {
+		// Video title has no separator; fallback to channel uploader as artist if missing
+		if cleanedTitle != "" {
+			track.Title = cleanedTitle
+		}
+		if track.Artist == "" || strings.EqualFold(track.Artist, "YouTube") || strings.EqualFold(track.Artist, "YouTube Music") {
+			if author != "" {
+				track.Artist = author
+			}
+		}
+	}
+
+	if len(contribList) > 0 {
+		track.Contributors = strings.Join(contribList, " | ")
 	}
 }
 

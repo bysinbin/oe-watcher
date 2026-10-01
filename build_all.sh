@@ -37,12 +37,19 @@ echo "✅ Windows ARM64: dist/oe-watcher-windows-arm64.exe"
 
 # 4. Package Browser Extensions (Chrome & Firefox)
 echo ""
-echo "🌐 [4/4] Tarayıcı eklentileri (Chrome & Firefox) paketleniyor..."
+echo "🌐 [4/5] Tarayıcı eklentileri (Chrome & Firefox) paketleniyor..."
 ./build_extensions.sh
+
+# 5. Build Android APK
+echo ""
+echo "🤖 [5/5] Android yerel APK paketi derleniyor..."
+if [ -f "./build_android.sh" ]; then
+    ./build_android.sh
+fi
 
 echo ""
 echo "===================================================================="
-echo "🎉 TÜM PLATFORMLAR VE EKLENTİLER İÇİN DERLEME TAMAMLANDI!"
+echo "🎉 TÜM PLATFORMLAR, EKLENTİLER VE ANDROID İÇİN DERLEME TAMAMLANDI!"
 echo "📁 Çıktı Klasörü: dist/"
 echo "===================================================================="
 ls -lh dist/
