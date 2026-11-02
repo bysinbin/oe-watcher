@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !windows
 
 package tray
 
@@ -16,7 +16,7 @@ var (
 	webURL    string
 )
 
-// StartTray runs an event loop on non-macOS platforms (Windows, Linux),
+// StartTray runs an event loop on non-macOS/non-Windows platforms (e.g. Linux),
 // providing console feedback and handling termination signals gracefully.
 func StartTray(port int, autoSkip bool, cb MenuCallbacks) {
 	cbMu.Lock()
@@ -42,8 +42,8 @@ func StartTray(port int, autoSkip bool, cb MenuCallbacks) {
 	}
 }
 
-// SetTrack updates track display on non-macOS platforms.
+// SetTrack updates track display on non-macOS/non-Windows platforms.
 func SetTrack(artist, title string, isMatched bool) {}
 
-// SetAutoSkipState updates auto-skip status on non-macOS platforms.
+// SetAutoSkipState updates auto-skip status on non-macOS/non-Windows platforms.
 func SetAutoSkipState(enabled bool) {}

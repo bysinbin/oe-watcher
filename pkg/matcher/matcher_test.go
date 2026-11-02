@@ -280,3 +280,34 @@ func TestMatcherContributors(t *testing.T) {
 	}
 }
 
+
+
+func TestMatcherTurkishSuffixes(t *testing.T) {
+	m := matcher.NewMatcher(samplePersons())
+
+	// Test "Cezadan yeni klip" without apostrophe
+	track := models.MediaInfo{
+		App:    "YouTube",
+		Artist: "Netd Müzik",
+		Title:  "Cezadan Özel Açıklama",
+	}
+
+	result := m.Match(track)
+	if result == nil {
+		t.Fatalf("Expected match for 'Cezadan', got nil")
+	}
+	if result.Person.DisplayName != "Ceza (Bilgin Özçalkan)" {
+		t.Errorf("Expected Ceza, got %s", result.Person.DisplayName)
+	}
+
+	// Test "Cem Adriannın" (suffix "nın" folded to "nin")
+	track2 := models.MediaInfo{
+		App:    "YouTube",
+		Artist: "Cem Adriannin En Iyi Sarkilari",
+		Title:  "Konser Kaydı",
+	}
+	result2 := m.Match(track2)
+	if result2 == nil {
+		t.Fatalf("Expected match for 'Cem Adriannin', got nil")
+	}
+}

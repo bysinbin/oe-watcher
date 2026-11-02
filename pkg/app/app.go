@@ -215,24 +215,46 @@ func (a *App) StartAutoSync(ctx context.Context) {
 	}
 }
 
-// StartMonitoring begins the background polling loop.
+// StartMonitoring begins the background polling loop with adaptive polling.
 func (a *App) StartMonitoring(ctx context.Context) {
-	ticker := time.NewTicker(a.pollInterval)
+	baseInterval := a.pollInterval
+	if baseInterval <= 0 {
+		baseInterval = 1500 * time.Millisecond
+	}
+	idleInterval := baseInterval * 2
+	if idleInterval < 3000*time.Millisecond {
+		idleInterval = 3000 * time.Millisecond
+	}
+
+	ticker := time.NewTicker(baseInterval)
 	defer ticker.Stop()
 
 	// Initial check
 	a.pollOnce()
 
+	var wasIdle bool
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			a.pollOnce()
+			a.mu.RLock()
+			isIdle := a.currentMedia.State == "stopped" || a.currentMedia.State == ""
+			a.mu.RUnlock()
+
+			if isIdle && !wasIdle {
+				ticker.Reset(idleInterval)
+				wasIdle = true
+			} else if !isIdle && wasIdle {
+				ticker.Reset(baseInterval)
+				wasIdle = false
+			}
 		case <-a.fastPollChan:
-			// Darwin Notification center woke us up (0ms / Zero CPU)
 			time.Sleep(80 * time.Millisecond)
 			a.pollOnce()
+			ticker.Reset(baseInterval)
+			wasIdle = false
 		}
 	}
 }

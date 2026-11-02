@@ -1,3 +1,33 @@
+
+  function playAlertChime() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, now);
+      gain1.gain.setValueAtTime(0.12, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.25);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(880, now + 0.12);
+      gain2.gain.setValueAtTime(0.15, now + 0.12);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.12);
+      osc2.stop(now + 0.45);
+    } catch (_) {}
+  }
 document.addEventListener('DOMContentLoaded', () => {
   let selectedCategory = 'HEPSİ';
   let selectedTopic = 'TÜM KONULAR';
@@ -1541,7 +1571,52 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ keyword })
       });
       showToast(`🗑️ "${keyword}" kelimesi silindi.`);
-      loadRules();
+      
+    const formTestRule = document.getElementById('formTestRule');
+    if (formTestRule) {
+      formTestRule.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = document.getElementById('testRuleInput');
+        const text = input ? input.value.trim() : '';
+        if (!text) return;
+
+        const resultBox = document.getElementById('testRuleResult');
+        if (resultBox) {
+          resultBox.style.display = 'block';
+          resultBox.className = 'test-rule-result-box';
+          resultBox.innerHTML = 'Kural motorunda test ediliyor...';
+        }
+
+        try {
+          const res = await fetch('/api/rules/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+          });
+          const data = await res.json();
+          if (res.ok && resultBox) {
+            if (data.matched) {
+              resultBox.className = 'test-rule-result-box matched';
+              const topicsStr = data.topics && data.topics.length ? data.topics.join(', ') : '-';
+              resultBox.innerHTML = '<div class=\"test-rule-title\">🚨 KARA LİSTE EŞLEŞMESİ BULUNDU!</div><div class=\"test-rule-details\"><div><strong>Kişi / Hedef:</strong> ' + escapeHtml(data.person_name) + ' <span class=\"test-rule-badge\">' + escapeHtml(data.category) + '</span></div><div><strong>Eşleşen Kural / İsim:</strong> <code>' + escapeHtml(data.matched_name) + '</code></div><div><strong>Konu(lar):</strong> ' + escapeHtml(topicsStr) + '</div><div style=\"margin-top: 6px; font-size: 0.8rem; color: #fda4af;\">⚡ Bu içerik medyada çaldığında otomatik geçilecek / web sayfalarında kalkanlanacaktır.</div></div>';
+            } else {
+              resultBox.className = 'test-rule-result-box clean';
+              resultBox.innerHTML = '<div class=\"test-rule-title\" style=\"color: #34d399;\">✅ TEMİZ // EŞLEŞME YOK</div><div class=\"test-rule-details\"><div>Bu başlık veya metin kara listedeki hiçbir sanatçı, alias veya engellenen kelimeye takılmadı.</div><div style=\"margin-top: 4px; font-size: 0.8rem; color: #a7f3d0;\">🛡️ Bu içerik kesintisiz çalınır ve web kalkanına takılmadan görüntülenir.</div></div>';
+            }
+          } else if (resultBox) {
+            resultBox.className = 'test-rule-result-box';
+            resultBox.textContent = 'Hata: ' + (data.error || 'Test çalıştırılamadı');
+          }
+        } catch (err) {
+          if (resultBox) {
+            resultBox.className = 'test-rule-result-box';
+            resultBox.textContent = 'Bağlantı hatası: ' + err.message;
+          }
+        }
+      });
+    }
+
+    loadRules();
     } catch (err) {
       console.error(err);
     }

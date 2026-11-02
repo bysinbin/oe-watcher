@@ -1848,3 +1848,46 @@ input:checked + .slider:before {
 
 
 
+
+/* Rule Test Sandbox */
+.test-rule-result-box {
+  margin-top: 14px;
+  padding: 14px 18px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  transition: all 0.2s ease;
+}
+.test-rule-result-box.matched {
+  background: rgba(225, 29, 72, 0.12);
+  border: 1px solid rgba(225, 29, 72, 0.4);
+  color: #fff;
+}
+.test-rule-result-box.clean {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #fff;
+}
+.test-rule-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.test-rule-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+.test-rule-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(225, 29, 72, 0.25);
+  color: #ff859f;
+  font-weight: 600;
+  font-size: 0.75rem;
+}

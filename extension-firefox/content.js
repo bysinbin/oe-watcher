@@ -41,6 +41,12 @@
     'ytmusic-responsive-list-item-renderer',
     'ytmusic-two-row-item-renderer',
     'ytmusic-video-renderer',
+    // TikTok
+    '[data-e2e="recommend-list-item-container"]',
+    '[data-e2e="search-card-container"]',
+    // Instagram
+    'article[role="presentation"]',
+    'article._ab6-',
     // Reddit
     'shreddit-post',
     '[data-testid="post-container"]',
@@ -368,7 +374,7 @@
 
       const btnSkip = toast.querySelector('.oe-btn-skip-now');
       attachSafeAction(btnSkip, () => {
-        const nextBtn = document.querySelector('ytmusic-player-bar .next-button, #right-controls .next-button, .next-button, .ytp-next-button');
+        const nextBtn = document.querySelector('ytmusic-player-bar .next-button, #right-controls .next-button, .next-button, .ytp-next-button, [data-testid="control-button-skip-forward"], .playControls__next');
         if (nextBtn) nextBtn.click();
         const video = document.querySelector('video');
         if (video) { try { video.currentTime = video.duration || 99999; } catch(_) {} }
@@ -389,8 +395,10 @@
     const hostname = window.location.hostname;
     const isYTMusic = hostname === 'music.youtube.com';
     const isYouTube = hostname.includes('youtube.com') && !isYTMusic;
+    const isSpotify = hostname.includes('spotify.com');
+    const isSoundCloud = hostname.includes('soundcloud.com');
 
-    if (!isYTMusic && !isYouTube) return;
+    if (!isYTMusic && !isYouTube && !isSpotify && !isSoundCloud) return;
 
     let lastSkippedTrackKey = '';
     let isSkipping = false;
@@ -414,6 +422,16 @@
         const channelEl = document.querySelector('#channel-name yt-formatted-string, #owner ytd-channel-name');
         title = (titleEl ? (titleEl.getAttribute('title') || titleEl.textContent) : '').trim();
         artist = (channelEl ? (channelEl.getAttribute('title') || channelEl.textContent) : '').trim();
+      } else if (isSpotify) {
+        const titleEl = document.querySelector('[data-testid="context-item-info-title"] a, [data-testid="context-item-info-title"]');
+        const artistEl = document.querySelector('[data-testid="context-item-info-artist"] a, [data-testid="context-item-info-artist"], [data-testid="context-item-info-subtitles"] a');
+        title = (titleEl ? titleEl.textContent : '').trim();
+        artist = (artistEl ? artistEl.textContent : '').trim();
+      } else if (isSoundCloud) {
+        const titleEl = document.querySelector('.playbackSoundBadge__titleLink, .playbackSoundBadge__title');
+        const artistEl = document.querySelector('.playbackSoundBadge__lightLink');
+        title = (titleEl ? (titleEl.getAttribute('title') || titleEl.textContent) : '').trim();
+        artist = (artistEl ? (artistEl.getAttribute('title') || artistEl.textContent) : '').trim();
       }
 
       // MediaSession API fallback
@@ -442,7 +460,7 @@
 
           // 1. Click Next track button
           const nextBtn = document.querySelector(
-            'ytmusic-player-bar .next-button, #right-controls .next-button, .next-button, .ytp-next-button'
+            'ytmusic-player-bar .next-button, #right-controls .next-button, .next-button, .ytp-next-button, [data-testid="control-button-skip-forward"], .playControls__next'
           );
           if (nextBtn) {
             nextBtn.click();

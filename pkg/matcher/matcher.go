@@ -15,6 +15,17 @@ var (
 	artistSeparators = regexp.MustCompile(`(?i)\s*(?:,|&|feat\.?|ft\.?|vs\.?|with|\/|\bx\b|\bve\b|\+|\bprod\.?\s*(?:by)?\b|\bbeat\s*(?:by)?\b|\bcredits?\b|\bcomposer\b|\blyricist\b)\s*`)
 	nonAlphaNumeric  = regexp.MustCompile(`[^\p{L}\p{N}\s]`)
 	multipleSpaces   = regexp.MustCompile(`\s+`)
+
+	foldedTurkishSuffixes = []string{
+		"den", "dan", "ten", "tan",
+		"nin", "nun",
+		"ye", "ya",
+		"de", "da", "te", "ta",
+		"yi", "yu",
+		"in", "un",
+		"le", "la",
+		"i", "u", "e", "a",
+	}
 )
 
 type NormalizedCandidate struct {
@@ -259,27 +270,27 @@ func (m *Matcher) Match(track models.MediaInfo) *models.MatchResult {
 			}
 
 			// 1. Direct equality with track artist or one of the split artist parts
-			if artistFolded != "" && artistFolded == candFolded {
+			if artistFolded != "" && (artistFolded == candFolded || containsWordOrSuffix(artistFolded, candFolded)) {
 				return m.buildResult(item.Person, cand.Original, track)
 			}
 			for _, part := range artistPartsFolded {
-				if part == candFolded {
+				if part == candFolded || containsWordOrSuffix(part, candFolded) {
 					return m.buildResult(item.Person, cand.Original, track)
 				}
 			}
 
-			// 2. Check if artist contains candidate name as a word boundary
-			if artistFolded != "" && containsWord(artistFolded, candFolded) {
+			// 2. Check if artist contains candidate name as a word boundary with Turkish suffix support
+			if artistFolded != "" && containsWordOrSuffix(artistFolded, candFolded) {
 				return m.buildResult(item.Person, cand.Original, track)
 			}
 
 			// 3. For video/stream titles (like YouTube), check if title contains the candidate name
-			if titleFolded != "" && containsWord(titleFolded, candFolded) {
+			if titleFolded != "" && containsWordOrSuffix(titleFolded, candFolded) {
 				return m.buildResult(item.Person, cand.Original, track)
 			}
 
 			// 4. For contributors / credits (YouTube description, Söz, Müzik, Beat, Prod)
-			if contribFolded != "" && containsWord(contribFolded, candFolded) {
+			if contribFolded != "" && containsWordOrSuffix(contribFolded, candFolded) {
 				return m.buildResult(item.Person, cand.Original+" (Katkıda Bulunan: Söz/Müzik/Prod)", track)
 			}
 		}
@@ -404,6 +415,23 @@ func containsWord(haystack, needle string) bool {
 	paddedNeedle := " " + needle + " "
 	if strings.Contains(paddedHaystack, paddedNeedle) {
 		return true
+	}
+	return false
+}
+
+func containsWordOrSuffix(haystack, needle string) bool {
+	if containsWord(haystack, needle) {
+		return true
+	}
+	if len(needle) < 3 {
+		return false
+	}
+
+	paddedHaystack := " " + haystack + " "
+	for _, suf := range foldedTurkishSuffixes {
+		if strings.Contains(paddedHaystack, " "+needle+suf+" ") {
+			return true
+		}
 	}
 	return false
 }

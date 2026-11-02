@@ -141,6 +141,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/rules/alias", s.authMiddleware(s.handleRuleAlias))
 	mux.HandleFunc("/api/rules/exclude", s.authMiddleware(s.handleRuleExclude))
 	mux.HandleFunc("/api/rules/keyword", s.authMiddleware(s.handleRuleKeyword))
+	mux.HandleFunc("/api/rules/test", s.authMiddleware(s.handleRuleTest))
 
 	// Embedded Static files
 	staticSub, err := fs.Sub(staticFS, "static")
@@ -1132,5 +1133,74 @@ func foldTurkishStr(s string) string {
 	return strings.TrimSpace(s)
 }
 
+type RuleTestReq struct {
+	Text   string `json:"text"`
+	Artist string `json:"artist"`
+	Title  string `json:"title"`
+}
 
+type RuleTestResp struct {
+	Matched     bool                   `json:"matched"`
+	MatchedName string                 `json:"matched_name"`
+	PersonName  string                 `json:"person_name"`
+	Category    string                 `json:"category"`
+	Topics      []string               `json:"topics"`
+	Person      map[string]interface{} `json:"person,omitempty"`
+}
+
+func (s *Server) handleRuleTest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	var req RuleTestReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	track := models.MediaInfo{
+		Artist: strings.TrimSpace(req.Artist),
+		Title:  strings.TrimSpace(req.Title),
+	}
+	rawText := strings.TrimSpace(req.Text)
+	if track.Artist == "" && track.Title == "" && rawText != "" {
+		if strings.Contains(rawText, " - ") {
+			parts := strings.SplitN(rawText, " - ", 2)
+			track.Artist = strings.TrimSpace(parts[0])
+			track.Title = strings.TrimSpace(parts[1])
+		} else {
+			track.Artist = rawText
+			track.Title = rawText
+		}
+	}
+
+	match := s.app.GetMatcher().Match(track)
+	resp := RuleTestResp{
+		Matched: match != nil,
+	}
+	if match != nil {
+		resp.MatchedName = match.MatchedName
+		resp.PersonName = match.Person.DisplayName
+		resp.Category = match.Category
+		resp.Topics = match.Topics
+		resp.Person = map[string]interface{}{
+			"id":           match.Person.ID,
+			"display_name": match.Person.DisplayName,
+			"tags":         match.Person.Tags,
+			"topics":       match.Person.Topics,
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(resp)
+}
 
